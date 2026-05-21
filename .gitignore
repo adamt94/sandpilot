@@ -1,0 +1,6 @@
+node_modules
+.sandpilot
+dist
+*.log
+.DS_Store
+.docker-no-creds

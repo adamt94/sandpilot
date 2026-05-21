@@ -1,0 +1,10 @@
+FROM node:24-bookworm
+
+RUN npm install -g @openai/codex
+
+USER node
+WORKDIR /workspace
+
+ENV CODEX_HOME=/home/node/.codex
+
+CMD ["codex", "--help"]

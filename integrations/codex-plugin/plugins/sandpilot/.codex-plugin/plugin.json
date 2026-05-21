@@ -1,0 +1,36 @@
+{
+  "name": "sandpilot",
+  "version": "0.1.0",
+  "description": "Run coding-agent tasks on a remote Mac mini Docker sandbox and return reviewable patches.",
+  "author": {
+    "name": "Sandpilot Local"
+  },
+  "homepage": "https://localhost",
+  "repository": "https://localhost",
+  "license": "MIT",
+  "keywords": [
+    "sandbox",
+    "docker",
+    "codex",
+    "mac-mini",
+    "agent"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Sandpilot",
+    "shortDescription": "Run agent tasks on a Mac mini Docker sandbox",
+    "longDescription": "Adds Sandpilot guidance and slash commands for submitting the current git repo to a Mac mini Docker runner, streaming job progress, and fetching reviewable patches.",
+    "developerName": "Sandpilot Local",
+    "category": "Coding",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Use /sandbox to run this task on the Mac mini sandbox",
+      "Check Sandpilot job progress",
+      "Fetch a Sandpilot patch"
+    ]
+  }
+}

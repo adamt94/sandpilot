@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+exec ssh -N -L 7349:127.0.0.1:7349 nova@novas-mac-mini.local

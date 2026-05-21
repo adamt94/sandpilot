@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+exec bun run /Users/adamthompson/Documents/Dev/github/sandpilot/src/cli/index.ts "$@"
