@@ -5,7 +5,7 @@ import type { DaemonConfig, JobRecord, SubmitJobRequest, SubmitJobResponse } fro
 import { loadDaemonConfig } from "../shared/config";
 import { JobStore } from "./store";
 import { prepareRepo, runCodexInDocker, writePatchAndSummary } from "../runner/codexDockerRunner";
-import { runClaudeInDocker } from "../runner/claudeDockerRunner";
+import { runClaudeOnHost } from "../runner/claudeHostRunner";
 import { getModelProvider } from "../shared/models";
 import { runCommand } from "../shared/shell";
 import { dashboardHtml } from "./dashboard";
@@ -234,7 +234,7 @@ export class SandpilotDaemon {
       let exitCode: number;
 
       if (isClaudeModel(job.model)) {
-        exitCode = await runClaudeInDocker({
+        exitCode = await runClaudeOnHost({
           runner,
           config: this.config,
           store: this.store,
