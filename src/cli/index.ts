@@ -168,9 +168,12 @@ async function doctor(): Promise<void> {
   console.log(`config: ${JSON.stringify({ ...config, token: "***" }, null, 2)}`);
   console.log(`git: ${(await commandExists("git")) ? "ok" : "missing"}`);
   console.log(`docker: ${(await commandExists("docker")) ? "ok" : "missing"}`);
-  console.log(`codex: ${(await commandExists("codex")) ? "ok" : "missing on host; container image still needs it"}`);
+  console.log(`claude: ${(await commandExists("claude")) ? "ok" : "missing on host; container image still needs it"}`);
+  console.log(`codex: ${(await commandExists("codex")) ? "ok (fallback)" : "missing on host; container image still needs it"}`);
   console.log(`jobs: ${config.jobsDir}`);
+  console.log(`claudeHome: ${config.claudeHome}`);
   console.log(`codexHome: ${config.codexHome}`);
+  console.log(`codexFallbackModel: ${config.codexFallbackModel}`);
 }
 
 async function runProjectScript(relativePath: string): Promise<void> {
@@ -229,7 +232,7 @@ Usage:
   sandpilot daemon doctor
   sandpilot setup agents
   sandpilot doctor agents
-  sandpilot run "prompt" [--cwd .] [--model gpt-5.4] [--stream]
+  sandpilot run "prompt" [--cwd .] [--model claude-sonnet-4-5] [--stream]
   sandpilot status <job-id>
   sandpilot logs <job-id>
   sandpilot patch <job-id>

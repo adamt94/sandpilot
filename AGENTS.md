@@ -81,10 +81,16 @@ Restart remote daemon:
 ssh nova@novas-mac-mini.local '/bin/zsh -lc "pkill -f \"src/cli/index.ts daemon start\" || true; mkdir -p ~/.sandpilot; cd ~/sandpilot && nohup bun run src/cli/index.ts daemon start > ~/.sandpilot/daemon.log 2>&1 &"'
 ```
 
+## Runner Selection
+
+- Models starting with `claude` (e.g. `claude-sonnet-4-5`) → Claude Code runner (`sandpilot-claude:latest`)
+- All other models (e.g. `gpt-4o`) → Codex runner (`sandpilot-codex:latest`)
+- Default model is `claude-sonnet-4-5`; Codex (`gpt-4o`) is the automatic fallback when Claude hits a usage limit.
+
 ## Safety Rules
 
 - Do not auto-apply returned patches.
 - Warn if Sandpilot reports untracked files were omitted.
-- The Mac mini owns Codex auth.
+- The Mac mini owns Claude Code and Codex auth.
 - Docker runs on the Mac mini, not this MacBook.
 - Returned patches are the contract back to the local checkout.

@@ -43,8 +43,11 @@ export function loadDaemonConfig(): DaemonConfig {
     port: 7349,
     token: token(),
     imageName: "sandpilot-codex:latest",
+    claudeImageName: "sandpilot-claude:latest",
     jobsDir: join(sandpilotDir(), "jobs"),
     codexHome: join(homedir(), ".codex"),
+    claudeHome: join(homedir(), ".claude"),
+    codexFallbackModel: "gpt-4o",
     maxConcurrentJobs: 1,
   };
   writeJson(path, created);
@@ -60,7 +63,7 @@ export function loadClientConfig(): ClientConfig {
   const created: ClientConfig = {
     baseUrl: "http://127.0.0.1:7349",
     token: daemon?.token ?? token(),
-    defaultModel: "gpt-5.4",
+    defaultModel: "claude-sonnet-4-5",
   };
   writeJson(path, created);
   return created;

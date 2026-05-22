@@ -60,8 +60,11 @@ export type DaemonConfig = {
   port: number;
   token: string;
   imageName: string;
+  claudeImageName: string;
   jobsDir: string;
   codexHome: string;
+  claudeHome: string;
+  codexFallbackModel: string;
   maxConcurrentJobs: number;
 };
 

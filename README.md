@@ -20,7 +20,8 @@ Mac mini runner:
 - SSH Remote Login enabled
 - Docker Desktop installed and running
 - Node/npm or Homebrew
-- Codex login completed with `codex login`
+- Claude Code login completed with `claude auth login` (or `ANTHROPIC_API_KEY` set in daemon env)
+- Codex login completed with `codex login` (used as fallback when Claude hits usage limits)
 
 ## One-Command Setup
 
@@ -40,14 +41,23 @@ The bootstrap does this:
 - registers the local Sandpilot Codex plugin when Codex CLI is available
 - copies Sandpilot to `~/sandpilot` on the Mac mini
 - installs Bun on the Mac mini if needed
-- installs Codex CLI on the Mac mini if needed
+- installs Claude Code CLI on the Mac mini
+- installs Codex CLI on the Mac mini (used as fallback)
 - runs `bun install` and `bun run check`
-- builds `sandpilot-codex:latest`
+- builds `sandpilot-codex:latest` and `sandpilot-claude:latest` Docker images
 - starts the Mac mini daemon
-- copies the daemon token into local `~/.sandpilot/client.json`
+- copies the daemon token into local `~/.sandpilot/client.json` with `claude-sonnet-4-5` as the default model
 - verifies the daemon through an SSH tunnel
 
-If Codex is not logged in on the Mac mini, run:
+If Claude Code is not logged in on the Mac mini, run:
+
+```bash
+ssh -t nova@novas-mac-mini.local 'claude auth login'
+```
+
+Alternatively, set `ANTHROPIC_API_KEY` in the daemon environment on the Mac mini.
+
+If Codex is not logged in on the Mac mini (needed for fallback), run:
 
 ```bash
 ssh -t nova@novas-mac-mini.local 'codex login'
@@ -74,10 +84,23 @@ From any git repo:
 sandpilot run "make the requested change" --cwd . --stream
 ```
 
-From Claude Code, or T3 Code with the Claude provider selected:
+From Claude Code (default runner — uses `claude-sonnet-4-5`, falls back to Codex on usage limit):
+
+```bash
+sandpilot run "make the requested change" --cwd . --stream
+```
+
+Or via the slash command in Claude Code or T3 Code with the Claude provider selected:
 
 ```text
 /sandbox make the requested change
+```
+
+To use a specific model:
+
+```bash
+sandpilot run "make the requested change" --cwd . --model claude-opus-4-5 --stream
+sandpilot run "make the requested change" --cwd . --model gpt-4o --stream
 ```
 
 From Codex, use either the Sandpilot skill wording or the installed plugin command if available:
@@ -126,7 +149,7 @@ This creates a temporary git repo, submits a small Codex task to the Mac mini, a
    ~/.sandpilot/jobs/<job-id>/repo
    ```
 
-4. Docker starts `sandpilot-codex:latest` and mounts that repo as:
+4. Docker starts `sandpilot-claude:latest` (or `sandpilot-codex:latest` for Codex/fallback jobs) and mounts that repo as:
 
    ```bash
    /workspace

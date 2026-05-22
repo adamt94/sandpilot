@@ -76,9 +76,19 @@ if ! command -v codex >/dev/null 2>&1; then
   fi
 fi
 
+if ! command -v claude >/dev/null 2>&1; then
+  if command -v npm >/dev/null 2>&1; then
+    npm install -g @anthropic-ai/claude-code
+  else
+    echo "npm is missing, so Claude Code CLI could not be installed on the Mac mini."
+    exit 1
+  fi
+fi
+
 mkdir -p .docker-no-creds
 printf '{}\n' > .docker-no-creds/config.json
 DOCKER_CONFIG="$PWD/.docker-no-creds" docker build -t sandpilot-codex:latest -f docker/Dockerfile.codex .
+DOCKER_CONFIG="$PWD/.docker-no-creds" docker build -t sandpilot-claude:latest -f docker/Dockerfile.claude .
 
 mkdir -p "$HOME/.sandpilot"
 pkill -f "src/cli/index.ts daemon start" >/dev/null 2>&1 || true
@@ -88,9 +98,17 @@ curl -fsS http://127.0.0.1:7349/health >/dev/null
 
 if [[ ! -f "$HOME/.codex/auth.json" ]]; then
   echo
-  echo "Codex is installed but not logged in on the Mac mini."
+  echo "Codex is installed but not logged in on the Mac mini (used as fallback)."
   echo "Run this after bootstrap:"
   echo "  ssh -t ${USER}@$(hostname) 'codex login'"
+fi
+
+if [[ ! -d "$HOME/.claude" ]]; then
+  echo
+  echo "Claude Code is installed but not logged in on the Mac mini."
+  echo "Run this after bootstrap to log in:"
+  echo "  ssh -t ${USER}@$(hostname) 'claude auth login'"
+  echo "Or set ANTHROPIC_API_KEY in the daemon environment."
 fi
 REMOTE_SCRIPT
 
@@ -111,7 +129,7 @@ fs.writeFileSync(
     {
       baseUrl: `http://127.0.0.1:${daemon.port}`,
       token: daemon.token,
-      defaultModel: "gpt-5.4",
+      defaultModel: "claude-sonnet-4-5",
     },
     null,
     2,
@@ -141,6 +159,15 @@ echo "Run from any git repo:"
 echo "  sandpilot run \"your task\" --cwd . --stream"
 echo
 if ! ssh "${REMOTE}" 'test -f ~/.codex/auth.json'; then
-  echo "Before real jobs, log Codex in on the Mac mini:"
+  echo "Before Codex fallback jobs, log Codex in on the Mac mini:"
   echo "  ssh -t ${REMOTE} 'codex login'"
+fi
+
+if ! ssh "${REMOTE}" 'test -d ~/.claude'; then
+  echo
+  echo "Claude Code is installed but not logged in on the Mac mini."
+  echo "Log in with one of:"
+  echo "  ssh -t ${REMOTE} 'claude auth login'"
+  echo "Or set ANTHROPIC_API_KEY in the daemon environment:"
+  echo "  ssh ${REMOTE} 'echo \"ANTHROPIC_API_KEY=<key>\" >> ~/sandpilot/.env'"
 fi

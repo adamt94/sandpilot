@@ -5,6 +5,26 @@ import type { DaemonConfig, JobRecord, SubmitJobRequest, SubmitJobResponse } fro
 import { loadDaemonConfig } from "../shared/config";
 import { JobStore } from "./store";
 import { prepareRepo, runCodexInDocker, writePatchAndSummary } from "../runner/codexDockerRunner";
+import { runClaudeInDocker } from "../runner/claudeDockerRunner";
+import { runCommand } from "../shared/shell";
+
+const USAGE_LIMIT_PATTERNS = [
+  /usage.?limit/i,
+  /rate.?limit/i,
+  /too.?many.?requests/i,
+  /overloaded/i,
+  /insufficient_quota/i,
+  /quota.?exceeded/i,
+];
+
+function isClaudeModel(model: string): boolean {
+  return model.startsWith("claude");
+}
+
+function eventsContainUsageLimit(store: JobStore, jobId: string): boolean {
+  const events = store.listEvents(jobId);
+  return events.some((e) => USAGE_LIMIT_PATTERNS.some((p) => p.test(e.payload)));
+}
 
 type RunningJob = {
   controller: AbortController;
@@ -165,12 +185,38 @@ export class SandpilotDaemon {
       this.store.setStatus(job.id, "preparing");
       const baseline = await prepareRepo(runner, this.store);
       this.store.setStatus(job.id, "running");
-      const exitCode = await runCodexInDocker({
-        runner,
-        config: this.config,
-        store: this.store,
-        signal: controller.signal,
-      });
+
+      let exitCode: number;
+
+      if (isClaudeModel(job.model)) {
+        exitCode = await runClaudeInDocker({
+          runner,
+          config: this.config,
+          store: this.store,
+          signal: controller.signal,
+        });
+
+        if (exitCode !== 0 && !controller.signal.aborted && eventsContainUsageLimit(this.store, job.id)) {
+          this.store.addEvent(job.id, "info", `Claude usage limit reached — falling back to Codex (${this.config.codexFallbackModel})`);
+          await runCommand(["git", "reset", "--hard", baseline], { cwd: runner.repoDir });
+          await runCommand(["git", "clean", "-fd"], { cwd: runner.repoDir });
+          const fallbackRunner = { ...runner, job: { ...runner.job, model: this.config.codexFallbackModel } };
+          exitCode = await runCodexInDocker({
+            runner: fallbackRunner,
+            config: this.config,
+            store: this.store,
+            signal: controller.signal,
+          });
+        }
+      } else {
+        exitCode = await runCodexInDocker({
+          runner,
+          config: this.config,
+          store: this.store,
+          signal: controller.signal,
+        });
+      }
+
       await writePatchAndSummary({ runner, store: this.store, baseline, exitCode });
       this.store.setStatus(job.id, exitCode === 0 ? "succeeded" : "failed", exitCode);
     } catch (error) {
