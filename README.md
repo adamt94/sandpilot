@@ -1,19 +1,20 @@
 # Sandpilot
 
-Run AI coding tasks on a Mac mini inside Docker. Submit a job, close your laptop, come back to a reviewable patch.
+Run AI coding tasks on a Mac mini inside Docker. Submit a job from any project, close your laptop, come back to a reviewable patch.
+
+---
 
 ## Requirements
 
-**Your machine:** `ssh`, `rsync`, `git`, `node`, [Bun](https://bun.sh)
+| Your machine | Mac mini |
+|---|---|
+| `ssh`, `rsync`, `git`, `node`, [Bun](https://bun.sh) | SSH Remote Login enabled · Docker Desktop running · Node/npm (`brew install node`) |
 
-**Mac mini:**
-- SSH Remote Login enabled (System Settings → Sharing)
-- Docker Desktop installed and running
-- Node/npm installed (via Homebrew: `brew install node`)
+---
 
-## First-Time Setup
+## Setup
 
-Clone this repo on your machine, then run:
+**Run once from this repo:**
 
 ```bash
 scripts/bootstrap.sh nova@novas-mac-mini.local
@@ -21,77 +22,64 @@ scripts/bootstrap.sh nova@novas-mac-mini.local
 
 Replace `nova@novas-mac-mini.local` with your Mac mini SSH target. Bootstrap installs everything on both machines and starts the daemon.
 
-**After bootstrap, log in to Claude Code on the Mac mini:**
+**Then log in to Claude on the Mac mini:**
 
 ```bash
 ssh -t nova@novas-mac-mini.local 'claude auth login'
 ```
 
-That's it. You're set up.
+---
 
 ## Every Session
-
-One command does everything — starts the tunnel, checks the daemon, applies any patches you missed while your laptop was off:
 
 ```bash
 sandpilot start
 ```
 
-Then open the dashboard to see what's running:
+That's it. This starts the tunnel, checks the daemon, and applies any patches you missed while your laptop was off.
 
-```bash
-sandpilot dashboard
-```
+---
 
-## Running Tasks
+## Running a Task
 
-From any git repo on your machine:
+From any git repo:
 
 ```bash
 sandpilot run "your task here" --cwd . --apply --detach
 ```
 
-Or from Claude Code chat using the `/sandbox` slash command:
+Or from Claude Code using the slash command:
 
 ```
 /sandbox your task here
 ```
 
-The job runs on the Mac mini. You'll get a macOS notification when the patch is ready, then:
+You'll get a macOS notification when the patch is ready. Then:
 
 ```bash
 git diff    # review the changes
 ```
 
-Continue from the same sandbox session:
+---
 
-```bash
-sandpilot run "follow-up task" --continue <session-id> --apply --detach
-```
-
-## Dashboard
+<details>
+<summary><strong>Dashboard</strong></summary>
 
 ```bash
 sandpilot dashboard
 ```
 
-Opens a live view of active jobs, job history, and stats in your browser. Also reachable over Tailscale at `http://<mac-mini-tailscale-ip>:7349/?token=<token>` — find your token in `~/.sandpilot/client.json`.
+Opens a live view in your browser showing active jobs, history, stats, and logs. Auto-refreshes every 5 seconds.
 
-## Laptop Recovery
-
-If your laptop was off when a job finished, pick up any missed patches when you wake:
-
-```bash
-sandpilot pending --apply
+To access from another machine over Tailscale, find your token in `~/.sandpilot/client.json` and open:
+```
+http://<mac-mini-tailscale-ip>:7349/?token=<token>
 ```
 
-To have this run automatically on every wake from sleep:
+</details>
 
-```bash
-sandpilot setup wake-agent
-```
-
-## Updating
+<details>
+<summary><strong>Updating</strong></summary>
 
 Pull the latest, sync to the Mac mini, and restart the daemon:
 
@@ -99,24 +87,70 @@ Pull the latest, sync to the Mac mini, and restart the daemon:
 sandpilot update
 ```
 
-## Troubleshooting
+</details>
 
-**Tunnel not connecting:**
+<details>
+<summary><strong>Advanced Usage</strong></summary>
+
+**Continue from a previous sandbox session:**
 ```bash
-sandpilot tunnel --stop
-sandpilot tunnel --detach
+sandpilot run "follow-up task" --continue <session-id> --apply --detach
 ```
 
-**Daemon not responding on Mac mini:**
+**Use a specific model:**
+```bash
+sandpilot run "your task" --cwd . --model claude-opus-4-7 --apply --detach
+```
+
+**Check job status:**
+```bash
+sandpilot status <job-id>
+sandpilot logs <job-id>
+sandpilot list
+```
+
+**Manually apply a patch:**
+```bash
+sandpilot apply <job-id>
+```
+
+**Away from home network:** Use Tailscale — see [Remote Access](./docs/REMOTE_ACCESS.md).
+
+</details>
+
+<details>
+<summary><strong>Laptop Recovery</strong></summary>
+
+Jobs keep running on the Mac mini even when your laptop is off. `sandpilot start` handles this automatically, but you can also run it manually:
+
+```bash
+sandpilot pending --apply
+```
+
+To install a wake agent that runs this automatically every time your laptop wakes from sleep:
+
+```bash
+sandpilot setup wake-agent
+```
+
+</details>
+
+<details>
+<summary><strong>Troubleshooting</strong></summary>
+
+**Run `sandpilot start` first** — it fixes most issues automatically (tunnel down, daemon not running).
+
+**Check daemon health directly on Mac mini:**
 ```bash
 ssh nova@novas-mac-mini.local 'curl -fsS http://127.0.0.1:7349/health'
 ```
-If that fails, restart it:
+
+**Restart the daemon manually:**
 ```bash
 ssh nova@novas-mac-mini.local '/bin/zsh -lc "pkill -f \"src/cli/index.ts daemon start\" || true; cd ~/sandpilot && nohup bun run src/cli/index.ts daemon start > ~/.sandpilot/daemon.log 2>&1 &"'
 ```
 
-**Check daemon logs on Mac mini:**
+**Read daemon logs:**
 ```bash
 ssh nova@novas-mac-mini.local 'cat ~/.sandpilot/daemon.log'
 ```
@@ -125,6 +159,6 @@ ssh nova@novas-mac-mini.local 'cat ~/.sandpilot/daemon.log'
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
 ```
-Add that to `~/.zshrc` to make it permanent.
+Add to `~/.zshrc` to make it permanent.
 
-**Away from home network:** Use Tailscale — see [Remote Access](./docs/REMOTE_ACCESS.md).
+</details>

@@ -36,10 +36,9 @@ export function clientConfigPath(): string {
 
 export function loadDaemonConfig(): DaemonConfig {
   const path = daemonConfigPath();
-  const existing = readJson<DaemonConfig>(path);
-  if (existing) return existing;
+  const existing = readJson<Partial<DaemonConfig>>(path);
 
-  const created: DaemonConfig = {
+  const defaults: DaemonConfig = {
     host: "127.0.0.1",
     port: 7349,
     token: token(),
@@ -51,8 +50,18 @@ export function loadDaemonConfig(): DaemonConfig {
     codexFallbackModel: getDefaultModel("openai"),
     maxConcurrentJobs: 1,
   };
-  writeJson(path, created);
-  return created;
+
+  if (!existing) {
+    writeJson(path, defaults);
+    return defaults;
+  }
+
+  // fill in any fields added after initial setup
+  const merged: DaemonConfig = { ...defaults, ...existing };
+  if (JSON.stringify(merged) !== JSON.stringify(existing)) {
+    writeJson(path, merged);
+  }
+  return merged;
 }
 
 export function loadClientConfig(): ClientConfig {
