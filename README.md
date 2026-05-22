@@ -66,6 +66,12 @@ ssh -t nova@novas-mac-mini.local 'codex login'
 
 ## Daily Use
 
+Pull the latest code, sync to the Mac mini, and restart the daemon in one command:
+
+```bash
+sandpilot update
+```
+
 Install or repair agent app integrations:
 
 ```bash

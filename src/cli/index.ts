@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -69,6 +69,7 @@ async function main(): Promise<void> {
   if (command === "pending") return pending(rest);
   if (command === "setup" && subcommand === "wake-agent") return setupWakeAgent();
   if (command === "dashboard") return openDashboard();
+  if (command === "update") return update();
 
   printHelp();
   process.exitCode = 1;
@@ -423,6 +424,58 @@ async function runProjectScript(relativePath: string): Promise<void> {
   }
 }
 
+async function update(): Promise<void> {
+  const remotePath = join(homedir(), ".sandpilot", "remote");
+  if (!existsSync(remotePath)) {
+    throw new Error("no remote configured — run scripts/bootstrap.sh <user@host> first");
+  }
+  const remote = readFileSync(remotePath, "utf8").trim();
+  const remoteDir = process.env.SANDPILOT_REMOTE_DIR ?? "~/sandpilot";
+
+  console.log(`remote: ${remote}`);
+
+  console.log("\npulling latest...");
+  await runLive(["git", "pull"], { cwd: projectRoot });
+
+  console.log(`\nsyncing to ${remote}...`);
+  await runLive([
+    "rsync", "-az", "--delete",
+    "--exclude", "node_modules",
+    "--exclude", ".sandpilot",
+    "--exclude", ".git",
+    `${projectRoot}/`, `${remote}:${remoteDir}/`,
+  ]);
+
+  console.log("\nrestarting daemon...");
+  await runLive([
+    "ssh", remote,
+    [
+      'export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.bun/bin:$PATH"',
+      `cd "${remoteDir}"`,
+      "bun install --silent",
+      'pkill -f "src/cli/index.ts daemon start" || true',
+      `nohup bun run src/cli/index.ts daemon start > ~/.sandpilot/daemon.log 2>&1 &`,
+      "sleep 1",
+      "curl -fsS http://127.0.0.1:7349/health > /dev/null && echo 'daemon ok'",
+    ].join(" && "),
+  ]);
+
+  console.log("\nupdating local integrations...");
+  await runProjectScript("scripts/install-local.sh");
+
+  console.log("\ndone — sandpilot updated");
+}
+
+async function runLive(command: string[], options: { cwd?: string } = {}): Promise<void> {
+  const proc = Bun.spawn(command, {
+    ...(options.cwd ? { cwd: options.cwd } : {}),
+    stdout: "inherit",
+    stderr: "inherit",
+  });
+  const exitCode = await proc.exited;
+  if (exitCode !== 0) throw new Error(`command failed (${exitCode}): ${command[0]}`);
+}
+
 function printHelp(): void {
   const defaultModel = getDefaultModel();
   console.log(`sandpilot
@@ -443,6 +496,7 @@ Usage:
   sandpilot list
   sandpilot pending [--apply]
   sandpilot dashboard
+  sandpilot update
   sandpilot setup wake-agent
 `);
 }
