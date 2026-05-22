@@ -22,6 +22,7 @@ export async function runClaudeInDocker(input: {
   const logFile = Bun.file(logPath);
   const writer = logFile.writer();
 
+  const claudeJsonPath = `${input.config.claudeHome}.json`;
   const args = [
     "docker",
     "run",
@@ -36,6 +37,10 @@ export async function runClaudeInDocker(input: {
     "CLAUDE_HOME=/home/node/.claude",
   ];
 
+  if (existsSync(claudeJsonPath)) {
+    args.push("-v", `${claudeJsonPath}:/home/node/.claude.json:ro`);
+  }
+
   // Forward ANTHROPIC_API_KEY from the daemon environment if present
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (apiKey) {
@@ -48,6 +53,7 @@ export async function runClaudeInDocker(input: {
     "--dangerously-skip-permissions",
     "--output-format",
     "stream-json",
+    "--verbose",
     "--model",
     input.runner.job.model,
     "-p",
