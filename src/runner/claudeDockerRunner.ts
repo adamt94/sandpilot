@@ -1,8 +1,31 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { DaemonConfig, RunnerInput } from "../shared/types";
 import { commandExists } from "../shared/shell";
 import type { JobStore } from "../daemon/store";
+
+function resolveApiKey(claudeHome: string): string | null {
+  // 1. explicit env var takes priority
+  if (process.env.ANTHROPIC_API_KEY) return process.env.ANTHROPIC_API_KEY;
+
+  // 2. read from ~/.claude.json (written by `claude auth login`)
+  const claudeJsonPath = `${claudeHome}.json`;
+  if (!existsSync(claudeJsonPath)) return null;
+  try {
+    const config = JSON.parse(readFileSync(claudeJsonPath, "utf8")) as Record<string, unknown>;
+    if (typeof config.primaryApiKey === "string" && config.primaryApiKey) {
+      return config.primaryApiKey;
+    }
+    // OAuth login stores the key under oauthAccount
+    const oauth = config.oauthAccount as Record<string, unknown> | undefined;
+    if (oauth && typeof oauth.accessToken === "string" && oauth.accessToken) {
+      return oauth.accessToken;
+    }
+  } catch {
+    // malformed json — fall through
+  }
+  return null;
+}
 
 export async function runClaudeInDocker(input: {
   runner: RunnerInput;
@@ -23,7 +46,7 @@ export async function runClaudeInDocker(input: {
   const writer = logFile.writer();
 
   const claudeJsonPath = `${input.config.claudeHome}.json`;
-  const args = [
+  const args: string[] = [
     "docker",
     "run",
     "--rm",
@@ -41,10 +64,11 @@ export async function runClaudeInDocker(input: {
     args.push("-v", `${claudeJsonPath}:/home/node/.claude.json:ro`);
   }
 
-  // Forward ANTHROPIC_API_KEY from the daemon environment if present
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = resolveApiKey(input.config.claudeHome);
   if (apiKey) {
     args.push("-e", `ANTHROPIC_API_KEY=${apiKey}`);
+  } else {
+    input.store.addEvent(input.runner.job.id, "info", "No API key found — container will rely on mounted credentials");
   }
 
   args.push(
