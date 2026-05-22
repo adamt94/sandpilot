@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SandpilotDaemon } from "../daemon/server";
 import { parseRunArgs } from "./runArgs";
@@ -66,6 +66,7 @@ async function main(): Promise<void> {
   if (command === "apply" && subcommand) return apply(subcommand);
   if (command === "cancel" && subcommand) return cancel(subcommand);
   if (command === "list") return list();
+  if (command === "pending") return pending(rest);
 
   printHelp();
   process.exitCode = 1;
@@ -168,6 +169,7 @@ async function patch(jobId: string): Promise<void> {
 
 async function apply(jobId: string): Promise<void> {
   await applyPatch(jobId, process.cwd());
+  markApplied(jobId);
   console.log(`applied ${jobId}`);
 }
 
@@ -178,11 +180,14 @@ async function watchApply(jobId: string, inputArgs: string[]): Promise<void> {
   console.log(`job ${job.status}`);
   if (job.status !== "succeeded") {
     console.log(`logs: sandpilot logs ${jobId}`);
+    await notifyMacOS("Sandpilot", `Job ${jobId.slice(0, 16)} failed — run: sandpilot logs ${jobId}`);
     process.exitCode = 1;
     return;
   }
   await applyPatch(jobId, cwd);
+  markApplied(jobId);
   console.log(`applied ${jobId}`);
+  await notifyMacOS("Sandpilot patch ready", `${job.repoName} — review with: git diff`);
 }
 
 async function applyPatch(jobId: string, cwd: string): Promise<void> {
@@ -195,6 +200,64 @@ async function applyPatch(jobId: string, cwd: string): Promise<void> {
   const patchPath = join(tempDir, "result.patch");
   writeFileSync(patchPath, patchText);
   await runCommand(["git", "apply", "--whitespace=nowarn", patchPath], { cwd });
+}
+
+function appliedMarkerPath(jobId: string): string {
+  return join(homedir(), ".sandpilot", "applied", `${jobId}.applied`);
+}
+
+function markApplied(jobId: string): void {
+  const path = appliedMarkerPath(jobId);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, new Date().toISOString());
+}
+
+function isApplied(jobId: string): boolean {
+  return existsSync(appliedMarkerPath(jobId));
+}
+
+async function notifyMacOS(title: string, message: string): Promise<void> {
+  try {
+    const proc = Bun.spawn(
+      ["osascript", "-e", `display notification ${JSON.stringify(message)} with title ${JSON.stringify(title)}`],
+      { stdout: "ignore", stderr: "ignore" },
+    );
+    await proc.exited;
+  } catch {
+    // notifications are best-effort; swallow errors silently
+  }
+}
+
+async function pending(inputArgs: string[]): Promise<void> {
+  const shouldApply = inputArgs.includes("--apply");
+  const cwd = parseCwdFlag(inputArgs);
+
+  const repoRoot = (await runCommand(["git", "rev-parse", "--show-toplevel"], { cwd })).stdout.trim();
+  const repoName = basename(repoRoot);
+
+  const config = loadClientConfig();
+  const response = await apiFetch<{ jobs: JobRecord[] }>(config, "/v1/jobs");
+  const unapplied = response.jobs.filter(
+    (job) => job.status === "succeeded" && job.repoName === repoName && !isApplied(job.id),
+  );
+
+  if (unapplied.length === 0) {
+    console.log("no pending patches");
+    return;
+  }
+
+  for (const job of unapplied) {
+    console.log(`${job.id}\t${job.sessionId ?? "-"}\t${job.repoName}\t${job.finishedAt}`);
+    if (shouldApply) {
+      await applyPatch(job.id, repoRoot);
+      markApplied(job.id);
+      console.log(`applied ${job.id}`);
+    }
+  }
+
+  if (!shouldApply) {
+    console.log(`\nrun with --apply to apply all pending patches`);
+  }
 }
 
 function startApplyWatcher(jobId: string, cwd: string): string {
@@ -329,5 +392,6 @@ Usage:
   sandpilot apply <job-id>
   sandpilot cancel <job-id>
   sandpilot list
+  sandpilot pending [--apply] [--cwd .]
 `);
 }

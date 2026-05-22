@@ -5,7 +5,24 @@ description: Use when the user asks to run an AI coding task in a remote Sandpil
 
 # Sandpilot Sandbox Agent
 
-Use the `sandpilot` CLI as the source of truth for remote sandbox work.
+## STOP RULE — read first
+
+After `sandpilot run` returns, send one reply (see template below) and **end your turn immediately**. Do not call any more tools. Do not run `sandpilot status`, `sandpilot logs`, `sleep`, or anything else. The job runs on a remote Mac mini; there is nothing useful to wait for locally. Every extra tool call burns tokens for no reason.
+
+The ONLY exceptions are if the user's current message explicitly contains the words "progress", "status", "logs", or "wait".
+
+## Reply template (use this verbatim, fill in the placeholders)
+
+```
+Submitted to sandbox.
+Job: <job-id>
+Session: <session-id>
+The background watcher will apply the patch to your working tree when it finishes. You'll get a macOS notification, then `git diff` to review.
+```
+
+Nothing else. No next steps. No follow-up offers. Stop.
+
+---
 
 ## Workflow
 
@@ -21,19 +38,16 @@ Use the `sandpilot` CLI as the source of truth for remote sandbox work.
    ```bash
    bun run /Users/adamthompson/Documents/Dev/github/sandpilot/src/cli/index.ts run "<prompt>" --cwd . --apply --detach
    ```
-4. To inspect an existing job:
+4. To inspect an existing job (only when user asks):
    ```bash
    sandpilot status <job-id>
    sandpilot logs <job-id>
    sandpilot patch <job-id>
    ```
-5. Agent-triggered runs use `--apply --detach`, so the parent agent exits after submission while a local watcher applies the patch when the remote job finishes. Only run a separate `sandpilot apply <job-id>` if automatic apply failed or the user asks.
-
-## Default Response
-
-For a normal sandbox request, fire and forget: submit the job, report the submitted job id and session id printed by `sandpilot run`, tell the user the patch will appear in their local git diff when the background watcher finishes, then stop immediately.
-
-Do not poll `sandpilot status`, sleep, tail logs, or wait for completion unless the user explicitly asks for progress, status, logs, or the final result in the current message.
+5. If the laptop was off when a job completed (watcher never ran), recover with:
+   ```bash
+   sandpilot pending --apply --cwd .
+   ```
 
 ## Tunnel
 
@@ -53,6 +67,4 @@ ssh -N -L 7349:127.0.0.1:7349 nova@novas-mac-mini.local
 
 - Treat the Mac mini Docker container as the execution boundary.
 - Do not upload secrets unless a project allowlist explicitly supports them.
-- Do not stream remote Codex logs back to the parent agent unless the user asks for live progress.
-- Do not monitor detached jobs by default; this avoids spending parent-agent tokens while the remote agent works.
-- If untracked files are reported as omitted, tell the user before relying on the job result.
+- If untracked files are reported as omitted, mention it in the reply, then still stop.

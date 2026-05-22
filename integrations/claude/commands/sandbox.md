@@ -7,6 +7,23 @@ argument-hint: <task prompt>
 
 Run "$ARGUMENTS" through Sandpilot on the Mac mini runner.
 
+## STOP RULE
+
+Once `sandpilot run` exits, **your turn is over**. Send the reply below and call no more tools — no status checks, no log tailing, no sleeping, no follow-up. The job runs remotely; waiting here wastes tokens.
+
+Exception: if the user's message contains "progress", "status", "logs", or "wait" you may check.
+
+## Reply (send exactly this after a successful submit)
+
+```
+Submitted to sandbox.
+Job: <job-id>
+Session: <session-id>
+Patch will be applied automatically when the job finishes — you'll get a macOS notification, then `git diff` to review.
+```
+
+---
+
 ## Preflight
 
 Check the daemon through the local tunnel:
@@ -15,7 +32,7 @@ Check the daemon through the local tunnel:
 curl -fsS http://127.0.0.1:7349/health
 ```
 
-If unavailable, tell the user to start:
+If unavailable, tell the user to run:
 
 ```bash
 sandpilot-tunnel
@@ -29,23 +46,16 @@ From the current git repository:
 sandpilot run "$ARGUMENTS" --cwd . --apply --detach
 ```
 
-To continue the most recent remote sandbox state instead of starting fresh, use:
+To continue the most recent remote sandbox session instead of starting fresh:
 
 ```bash
 sandpilot run "$ARGUMENTS" --continue <session-id> --apply --detach
 ```
 
-## Result
+## Laptop was off / watcher died
 
-Default behavior is fire-and-forget. After `sandpilot run` returns, report only the submitted job id, session id, that auto-apply is running in the background, and that the user can review later with `git diff`. Then stop.
-
-Do not poll `sandpilot status`, sleep, tail logs, or wait for completion unless the user explicitly asks for progress, status, logs, or the final result.
-
-If automatic apply later fails, inspect:
+If the laptop was closed while a job ran, recover missed patches with:
 
 ```bash
-sandpilot logs <job-id>
-sandpilot patch <job-id>
+sandpilot pending --apply --cwd .
 ```
-
-Do not run an additional `sandpilot apply` unless automatic apply failed or the user explicitly asks.
