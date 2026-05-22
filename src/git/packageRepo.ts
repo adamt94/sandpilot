@@ -38,6 +38,7 @@ export async function packageRepo(input: {
     model: input.model,
     bundleBase64: readFileSync(bundlePath).toString("base64"),
     diff,
+    clientCwd: root,
   };
   if (untracked.length > 0) {
     request.warning = `Untracked files were not included: ${untracked.slice(0, 10).join(", ")}${

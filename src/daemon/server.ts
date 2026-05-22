@@ -108,6 +108,7 @@ export class SandpilotDaemon {
         model: body.model,
         prompt: body.prompt,
         warning: null,
+        clientCwd: body.clientCwd ?? null,
       });
       this.store.addEvent(id, "info", `Job submitted for existing session ${session.id}`);
     } else {
@@ -136,6 +137,7 @@ export class SandpilotDaemon {
         model: body.model,
         prompt: body.prompt,
         warning: body.warning ?? null,
+        clientCwd: body.clientCwd ?? null,
       });
       this.store.upsertArtifact(id, "bundle", bundlePath);
       this.store.upsertArtifact(id, "input-diff", diffPath);

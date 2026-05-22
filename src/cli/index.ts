@@ -67,6 +67,7 @@ async function main(): Promise<void> {
   if (command === "cancel" && subcommand) return cancel(subcommand);
   if (command === "list") return list();
   if (command === "pending") return pending(rest);
+  if (command === "setup" && subcommand === "wake-agent") return setupWakeAgent();
 
   printHelp();
   process.exitCode = 1;
@@ -81,6 +82,7 @@ async function run(inputArgs: string[]): Promise<void> {
         model: options.model ?? config.defaultModel,
         sessionMode: "continue",
         sessionId: options.continueSession,
+        clientCwd: resolve(options.cwd),
       }
     : await packageRepo({
         cwd: options.cwd,
@@ -230,15 +232,11 @@ async function notifyMacOS(title: string, message: string): Promise<void> {
 
 async function pending(inputArgs: string[]): Promise<void> {
   const shouldApply = inputArgs.includes("--apply");
-  const cwd = parseCwdFlag(inputArgs);
-
-  const repoRoot = (await runCommand(["git", "rev-parse", "--show-toplevel"], { cwd })).stdout.trim();
-  const repoName = basename(repoRoot);
 
   const config = loadClientConfig();
   const response = await apiFetch<{ jobs: JobRecord[] }>(config, "/v1/jobs");
   const unapplied = response.jobs.filter(
-    (job) => job.status === "succeeded" && job.repoName === repoName && !isApplied(job.id),
+    (job) => job.status === "succeeded" && !isApplied(job.id),
   );
 
   if (unapplied.length === 0) {
@@ -247,9 +245,14 @@ async function pending(inputArgs: string[]): Promise<void> {
   }
 
   for (const job of unapplied) {
-    console.log(`${job.id}\t${job.sessionId ?? "-"}\t${job.repoName}\t${job.finishedAt}`);
+    const cwd = job.clientCwd ?? null;
+    console.log(`${job.id}\t${job.repoName}\t${cwd ?? "unknown cwd"}\t${job.finishedAt}`);
     if (shouldApply) {
-      await applyPatch(job.id, repoRoot);
+      if (!cwd) {
+        console.log(`skipped ${job.id}: no client cwd recorded (run sandpilot apply ${job.id} --cwd <path>)`);
+        continue;
+      }
+      await applyPatch(job.id, cwd);
       markApplied(job.id);
       console.log(`applied ${job.id}`);
     }
@@ -258,6 +261,44 @@ async function pending(inputArgs: string[]): Promise<void> {
   if (!shouldApply) {
     console.log(`\nrun with --apply to apply all pending patches`);
   }
+}
+
+async function setupWakeAgent(): Promise<void> {
+  const sandpilotBin = (await runCommand(["which", "sandpilot"])).stdout.trim()
+    || join(dirname(fileURLToPath(import.meta.url)), "../../bin/sandpilot");
+
+  const logPath = join(homedir(), ".sandpilot", "wake-agent.log");
+  const plistPath = join(homedir(), "Library", "LaunchAgents", "com.sandpilot.wake-agent.plist");
+  const plist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.sandpilot.wake-agent</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${sandpilotBin}</string>
+    <string>pending</string>
+    <string>--apply</string>
+  </array>
+  <key>StartAfterSystemSleep</key>
+  <true/>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>${logPath}</string>
+  <key>StandardErrorPath</key>
+  <string>${logPath}</string>
+</dict>
+</plist>
+`;
+
+  mkdirSync(dirname(plistPath), { recursive: true });
+  writeFileSync(plistPath, plist);
+  await runCommand(["launchctl", "load", plistPath]);
+  console.log(`wake-agent installed: ${plistPath}`);
+  console.log(`logs: ${logPath}`);
+  console.log(`sandpilot pending --apply will run automatically on every wake from sleep`);
 }
 
 function startApplyWatcher(jobId: string, cwd: string): string {
@@ -392,6 +433,7 @@ Usage:
   sandpilot apply <job-id>
   sandpilot cancel <job-id>
   sandpilot list
-  sandpilot pending [--apply] [--cwd .]
+  sandpilot pending [--apply]
+  sandpilot setup wake-agent
 `);
 }

@@ -18,6 +18,7 @@ export type JobRecord = {
   model: string;
   prompt: string;
   warning: string | null;
+  clientCwd: string | null;
   createdAt: string;
   startedAt: string | null;
   finishedAt: string | null;
@@ -45,6 +46,7 @@ export type SubmitJobRequest = {
   bundleBase64?: string;
   diff?: string;
   warning?: string;
+  clientCwd?: string;
 };
 
 export type SubmitJobResponse = {

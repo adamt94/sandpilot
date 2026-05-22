@@ -13,6 +13,7 @@ type JobRow = {
   model: string;
   prompt: string;
   warning: string | null;
+  client_cwd: string | null;
   created_at: string;
   started_at: string | null;
   finished_at: string | null;
@@ -109,13 +110,14 @@ export class JobStore {
     model: string;
     prompt: string;
     warning: string | null;
+    clientCwd: string | null;
   }): JobRecord {
     const createdAt = new Date().toISOString();
     this.db
       .query(
         `insert into jobs
-        (id, session_id, repo_name, source_head, source_branch, status, model, prompt, warning, created_at)
-        values (?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?)`,
+        (id, session_id, repo_name, source_head, source_branch, status, model, prompt, warning, client_cwd, created_at)
+        values (?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?)`,
       )
       .run(
         input.id,
@@ -126,6 +128,7 @@ export class JobStore {
         input.model,
         input.prompt,
         input.warning,
+        input.clientCwd,
         createdAt,
       );
     const job = this.getJob(input.id);
@@ -243,6 +246,9 @@ export class JobStore {
     if (!columns.some((column) => column.name === "session_id")) {
       this.db.exec("alter table jobs add column session_id text");
     }
+    if (!columns.some((column) => column.name === "client_cwd")) {
+      this.db.exec("alter table jobs add column client_cwd text");
+    }
   }
 }
 
@@ -257,6 +263,7 @@ function mapJob(row: JobRow): JobRecord {
     model: row.model,
     prompt: row.prompt,
     warning: row.warning,
+    clientCwd: row.client_cwd,
     createdAt: row.created_at,
     startedAt: row.started_at,
     finishedAt: row.finished_at,
