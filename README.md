@@ -146,6 +146,57 @@ Apply only when you want the returned patch:
 sandpilot apply <job-id>
 ```
 
+## Dashboard
+
+Open the web dashboard in your browser:
+
+```bash
+sandpilot dashboard
+```
+
+This opens `http://127.0.0.1:7349/?token=<your-token>` — also reachable over Tailscale at the Mac mini's address.
+
+The dashboard shows:
+
+- **Stats bar** — total jobs, success rate, active count, average duration, most-used model
+- **Active panel** — running and queued jobs with a live elapsed timer and cancel button
+- **History table** — every finished job with status, repo, model, prompt preview, duration, and age
+- **Expanded row** — click any history row to see the full prompt, session ID, working directory, and event log
+
+Auto-refreshes every 5 seconds.
+
+### Getting the token
+
+The bearer token is stored in `~/.sandpilot/client.json`:
+
+```bash
+cat ~/.sandpilot/client.json
+```
+
+`sandpilot dashboard` reads this automatically and embeds the token in the URL. If you want to access the dashboard from another machine over Tailscale, copy the token from that file and append it manually:
+
+```
+http://<tailscale-ip>:7349/?token=<token>
+```
+
+## Laptop Recovery
+
+When you close your laptop while a job is running, the job keeps going on the Mac mini. The patch is stored there safely. When you wake up, apply any missed patches across all your projects in one command:
+
+```bash
+sandpilot pending --apply
+```
+
+Without `--apply` it lists what's waiting without touching anything.
+
+To apply patches automatically every time your laptop wakes from sleep, install the wake agent once:
+
+```bash
+sandpilot setup wake-agent
+```
+
+This registers a macOS LaunchAgent that runs `sandpilot pending --apply` on every wake. You'll get a macOS notification when each patch is applied.
+
 ## Smoke Test
 
 With the tunnel open:
