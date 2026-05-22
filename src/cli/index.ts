@@ -69,6 +69,7 @@ async function main(): Promise<void> {
   if (command === "pending") return pending(rest);
   if (command === "start") return start();
   if (command === "setup" && subcommand === "wake-agent") return setupWakeAgent();
+  if (command === "setup" && subcommand === "api-key" && rest[0]) return setupApiKey(rest[0]);
   if (command === "dashboard") return openDashboard();
   if (command === "update") return update();
   if (command === "tunnel") return tunnel([subcommand, ...rest].filter(Boolean) as string[]);
@@ -272,6 +273,38 @@ async function openDashboard(): Promise<void> {
   const url = `${config.baseUrl}/?token=${config.token}`;
   console.log(url);
   await runCommand(["open", url]);
+}
+
+async function setupApiKey(apiKey: string): Promise<void> {
+  const remotePath = join(homedir(), ".sandpilot", "remote");
+  if (!existsSync(remotePath)) throw new Error("no remote configured — run scripts/bootstrap.sh first");
+  const remote = readFileSync(remotePath, "utf8").trim();
+
+  await runLive([
+    "ssh", remote,
+    [
+      "node -e \"",
+      "const fs=require('fs'),p=require('os').homedir()+'/.sandpilot/daemon.json';",
+      "const c=JSON.parse(fs.readFileSync(p,'utf8'));",
+      `c.anthropicApiKey='${apiKey}';`,
+      "fs.writeFileSync(p,JSON.stringify(c,null,2)+'\\n',{mode:0o600});",
+      "console.log('API key saved');",
+      "\"",
+    ].join(""),
+  ]);
+
+  // restart daemon so it picks up the new key
+  const remoteDir = (process.env.SANDPILOT_REMOTE_DIR ?? "~/sandpilot").replace(/^~/, "$HOME");
+  await runLive([
+    "ssh", remote,
+    [
+      'export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.bun/bin:$PATH"',
+      'pkill -f "src/cli/index.ts daemon start" || true',
+      `nohup bun run ${remoteDir}/src/cli/index.ts daemon start > ~/.sandpilot/daemon.log 2>&1 &`,
+      "sleep 2",
+      "curl -fsS http://127.0.0.1:7349/health > /dev/null && echo 'daemon restarted ok'",
+    ].join("\n"),
+  ]);
 }
 
 async function setupWakeAgent(): Promise<void> {
@@ -574,6 +607,7 @@ Usage:
   sandpilot pending [--apply]
   sandpilot dashboard
   sandpilot update
+  sandpilot setup api-key <key>
   sandpilot setup wake-agent
 `);
 }
