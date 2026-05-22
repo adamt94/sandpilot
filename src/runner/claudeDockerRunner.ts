@@ -48,7 +48,7 @@ export async function runClaudeInDocker(input: {
     "--dangerously-skip-permissions",
     "--output-format",
     "stream-json",
-    "-m",
+    "--model",
     input.runner.job.model,
     "-p",
     input.runner.job.prompt,
