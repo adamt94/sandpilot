@@ -462,7 +462,7 @@ async function start(): Promise<void> {
         `nohup bun run src/cli/index.ts daemon start > ~/.sandpilot/daemon.log 2>&1 &`,
         "sleep 2",
         "curl -fsS http://127.0.0.1:7349/health > /dev/null && echo 'daemon ok'",
-      ].join(" && "),
+      ].join("\n"),
     ]);
   }
 
@@ -530,7 +530,7 @@ async function update(): Promise<void> {
       `nohup bun run src/cli/index.ts daemon start > ~/.sandpilot/daemon.log 2>&1 &`,
       "sleep 1",
       "curl -fsS http://127.0.0.1:7349/health > /dev/null && echo 'daemon ok'",
-    ].join(" && "),
+    ].join("\n"),
   ]);
 
   console.log("\nupdating local integrations...");
