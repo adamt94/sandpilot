@@ -68,6 +68,7 @@ async function main(): Promise<void> {
   if (command === "list") return list();
   if (command === "pending") return pending(rest);
   if (command === "setup" && subcommand === "wake-agent") return setupWakeAgent();
+  if (command === "dashboard") return openDashboard();
 
   printHelp();
   process.exitCode = 1;
@@ -263,6 +264,13 @@ async function pending(inputArgs: string[]): Promise<void> {
   }
 }
 
+async function openDashboard(): Promise<void> {
+  const config = loadClientConfig();
+  const url = `${config.baseUrl}/?token=${config.token}`;
+  console.log(url);
+  await runCommand(["open", url]);
+}
+
 async function setupWakeAgent(): Promise<void> {
   const sandpilotBin = (await runCommand(["which", "sandpilot"])).stdout.trim()
     || join(dirname(fileURLToPath(import.meta.url)), "../../bin/sandpilot");
@@ -434,6 +442,7 @@ Usage:
   sandpilot cancel <job-id>
   sandpilot list
   sandpilot pending [--apply]
+  sandpilot dashboard
   sandpilot setup wake-agent
 `);
 }

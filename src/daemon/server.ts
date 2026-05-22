@@ -8,6 +8,7 @@ import { prepareRepo, runCodexInDocker, writePatchAndSummary } from "../runner/c
 import { runClaudeInDocker } from "../runner/claudeDockerRunner";
 import { getModelProvider } from "../shared/models";
 import { runCommand } from "../shared/shell";
+import { dashboardHtml } from "./dashboard";
 
 const USAGE_LIMIT_PATTERNS = [
   /usage.?limit/i,
@@ -54,10 +55,11 @@ export class SandpilotDaemon {
 
   private async handle(request: Request): Promise<Response> {
     try {
-      if (!this.authorized(request)) return text("unauthorized", 401);
       const url = new URL(request.url);
       const parts = url.pathname.split("/").filter(Boolean);
 
+      if (request.method === "GET" && url.pathname === "/") return this.dashboard();
+      if (!this.authorized(request)) return text("unauthorized", 401);
       if (request.method === "GET" && url.pathname === "/health") return json({ ok: true });
       if (request.method === "POST" && url.pathname === "/v1/jobs") return this.submit(request);
       if (request.method === "GET" && url.pathname === "/v1/jobs") return json({ jobs: this.store.listJobs() });
@@ -172,6 +174,10 @@ export class SandpilotDaemon {
     return new Response(readFileSync(artifact.path), {
       headers: { "content-type": "text/x-patch" },
     });
+  }
+
+  private dashboard(): Response {
+    return new Response(dashboardHtml(), { headers: { "content-type": "text/html;charset=utf-8" } });
   }
 
   private cancel(jobId: string): Response {
