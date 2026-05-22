@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { DaemonConfig, RunnerInput } from "../shared/types";
 import { commandExists, runCommand } from "../shared/shell";
@@ -6,6 +6,20 @@ import type { JobStore } from "../daemon/store";
 
 export async function prepareRepo(input: RunnerInput, store: JobStore): Promise<string> {
   mkdirSync(input.jobDir, { recursive: true });
+  mkdirSync(input.sessionDir, { recursive: true });
+
+  const session = input.job.sessionId ? store.getSession(input.job.sessionId) : null;
+  if (session?.baseline) {
+    if (!existsSync(input.repoDir)) {
+      throw new Error(`Session repo is missing for ${session.id}`);
+    }
+    store.addEvent(input.job.id, "info", `Continuing session ${session.id}`);
+    return session.baseline;
+  }
+
+  if (existsSync(input.repoDir)) {
+    rmSync(input.repoDir, { recursive: true, force: true });
+  }
 
   await runCommand(["git", "clone", input.bundlePath, input.repoDir]);
   await runCommand(["git", "checkout", input.job.sourceHead], { cwd: input.repoDir });
@@ -25,6 +39,9 @@ export async function prepareRepo(input: RunnerInput, store: JobStore): Promise<
   }
 
   const baseline = (await runCommand(["git", "rev-parse", "HEAD"], { cwd: input.repoDir })).stdout.trim();
+  if (input.job.sessionId) {
+    store.updateSessionBaseline(input.job.sessionId, baseline);
+  }
   store.addEvent(input.job.id, "info", `Baseline ready: ${baseline}`);
   return baseline;
 }
@@ -115,6 +132,7 @@ export async function writePatchAndSummary(input: {
     [
       `# Sandpilot Job ${input.runner.job.id}`,
       "",
+      `- Session: ${input.runner.job.sessionId ?? "n/a"}`,
       `- Repo: ${input.runner.job.repoName}`,
       `- Branch: ${input.runner.job.sourceBranch}`,
       `- Source HEAD: ${input.runner.job.sourceHead}`,
@@ -131,6 +149,26 @@ export async function writePatchAndSummary(input: {
 
   input.store.upsertArtifact(input.runner.job.id, "patch", patchPath);
   input.store.upsertArtifact(input.runner.job.id, "summary", summaryPath);
+
+  if (input.exitCode === 0 && input.runner.job.sessionId) {
+    await checkpointSession(input.runner.repoDir, input.runner.job.sessionId, input.runner.job.id, input.store);
+  }
+}
+
+async function checkpointSession(
+  repoDir: string,
+  sessionId: string,
+  jobId: string,
+  store: JobStore,
+): Promise<void> {
+  await runCommand(["git", "add", "-A"], { cwd: repoDir });
+  const status = (await runCommand(["git", "status", "--porcelain"], { cwd: repoDir })).stdout.trim();
+  if (status) {
+    await runCommand(["git", "commit", "-m", `sandpilot checkpoint ${jobId}`], { cwd: repoDir });
+  }
+  const checkpoint = (await runCommand(["git", "rev-parse", "HEAD"], { cwd: repoDir })).stdout.trim();
+  store.updateSessionBaseline(sessionId, checkpoint);
+  store.addEvent(jobId, "info", `Session checkpoint ready: ${checkpoint}`);
 }
 
 async function streamToStore(

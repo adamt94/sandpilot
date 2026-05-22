@@ -30,7 +30,7 @@ sandpilot-tunnel
 From any git repository, submit a job:
 
 ```bash
-sandpilot run "TASK PROMPT" --cwd . --stream
+sandpilot run "TASK PROMPT" --cwd . --apply
 ```
 
 Inspect outputs:
@@ -41,7 +41,7 @@ sandpilot logs <job-id>
 sandpilot patch <job-id>
 ```
 
-Only apply a patch when the user explicitly asks:
+If automatic apply was not used, only apply a patch when the user explicitly asks:
 
 ```bash
 sandpilot apply <job-id>
@@ -52,13 +52,13 @@ sandpilot apply <job-id>
 Use the absolute wrapper:
 
 ```bash
-/Users/adamthompson/Documents/Dev/github/sandpilot/bin/sandpilot run "TASK PROMPT" --cwd . --stream
+/Users/adamthompson/Documents/Dev/github/sandpilot/bin/sandpilot run "TASK PROMPT" --cwd . --apply
 ```
 
 Or call the TypeScript entrypoint directly:
 
 ```bash
-bun run /Users/adamthompson/Documents/Dev/github/sandpilot/src/cli/index.ts run "TASK PROMPT" --cwd . --stream
+bun run /Users/adamthompson/Documents/Dev/github/sandpilot/src/cli/index.ts run "TASK PROMPT" --cwd . --apply
 ```
 
 ## Health Checks
@@ -75,6 +75,12 @@ Check remote daemon:
 ssh nova@novas-mac-mini.local 'lsof -nP -iTCP:7349 -sTCP:LISTEN || true'
 ```
 
+Check sandbox container tools:
+
+```bash
+ssh nova@novas-mac-mini.local 'cd ~/sandpilot && bun run src/cli/index.ts daemon sandbox-doctor'
+```
+
 Restart remote daemon:
 
 ```bash
@@ -83,7 +89,7 @@ ssh nova@novas-mac-mini.local '/bin/zsh -lc "pkill -f \"src/cli/index.ts daemon 
 
 ## Safety Rules
 
-- Do not auto-apply returned patches.
+- Agent command integrations use `--apply` by default to avoid streaming remote Codex logs into the parent agent. If a run was submitted without `--apply`, do not apply the patch unless the user asks.
 - Warn if Sandpilot reports untracked files were omitted.
 - The Mac mini owns Codex auth.
 - Docker runs on the Mac mini, not this MacBook.

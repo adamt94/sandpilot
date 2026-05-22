@@ -30,6 +30,7 @@ export async function packageRepo(input: {
     .filter(Boolean);
 
   const request: SubmitJobRequest = {
+    sessionMode: "new",
     repoName: basename(root),
     sourceHead,
     sourceBranch,

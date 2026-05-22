@@ -8,9 +8,10 @@ CLAUDE_COMMANDS_DIR="${HOME}/.claude/commands"
 
 mkdir -p "${BIN_DIR}" "${SKILL_DIR}" "${CLAUDE_COMMANDS_DIR}"
 
-chmod +x "${ROOT_DIR}/bin/sandpilot" "${ROOT_DIR}/bin/sandpilot-tunnel"
+chmod +x "${ROOT_DIR}/bin/sandpilot" "${ROOT_DIR}/bin/sandpilot-tunnel" "${ROOT_DIR}/bin/sandpilot-tailscale"
 ln -sf "${ROOT_DIR}/bin/sandpilot" "${BIN_DIR}/sandpilot"
 ln -sf "${ROOT_DIR}/bin/sandpilot-tunnel" "${BIN_DIR}/sandpilot-tunnel"
+ln -sf "${ROOT_DIR}/bin/sandpilot-tailscale" "${BIN_DIR}/sandpilot-tailscale"
 cp "${ROOT_DIR}/skills/sandbox-agent/SKILL.md" "${SKILL_DIR}/SKILL.md"
 cp "${ROOT_DIR}/integrations/claude/commands/sandbox.md" "${CLAUDE_COMMANDS_DIR}/sandbox.md"
 
@@ -22,6 +23,7 @@ fi
 echo "Installed:"
 echo "  ${BIN_DIR}/sandpilot"
 echo "  ${BIN_DIR}/sandpilot-tunnel"
+echo "  ${BIN_DIR}/sandpilot-tailscale"
 echo "  ${SKILL_DIR}/SKILL.md"
 echo "  ${CLAUDE_COMMANDS_DIR}/sandbox.md"
 

@@ -1,5 +1,5 @@
 ---
-description: Send the current repo task to the Sandpilot Mac mini Docker sandbox and stream progress.
+description: Send the current repo task to the Sandpilot Mac mini Docker sandbox and apply the resulting patch.
 argument-hint: <task prompt>
 ---
 
@@ -26,15 +26,21 @@ sandpilot-tunnel
 From the current git repository:
 
 ```bash
-sandpilot run "$ARGUMENTS" --cwd . --stream
+sandpilot run "$ARGUMENTS" --cwd . --apply --detach
+```
+
+To continue the most recent remote sandbox state instead of starting fresh, use:
+
+```bash
+sandpilot run "$ARGUMENTS" --continue <session-id> --apply --detach
 ```
 
 ## Result
 
-Report the job id, final status, and patch command:
+Report the job id, final status, session id, and whether the patch was applied. If automatic apply failed, report the patch command:
 
 ```bash
 sandpilot patch <job-id>
 ```
 
-Do not apply the patch unless the user explicitly asks.
+Do not run an additional `sandpilot apply` unless automatic apply failed or the user explicitly asks.

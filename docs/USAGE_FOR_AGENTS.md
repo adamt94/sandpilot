@@ -22,18 +22,30 @@ sandpilot doctor agents
 sandpilot-tunnel
 ```
 
+Away from the same network, first save the Mac mini Tailscale target:
+
+```bash
+sandpilot-tunnel --set nova@<mac-mini-tailnet-name-or-100.x-ip>
+```
+
 ## Submit A Sandbox Job
 
 From any git repository:
 
 ```bash
-sandpilot run "describe the task here" --cwd . --stream
+sandpilot run "describe the task here" --cwd . --apply --detach
+```
+
+To keep working in the same remote sandbox state:
+
+```bash
+sandpilot run "describe the follow-up task" --continue <session-id> --apply --detach
 ```
 
 If `sandpilot` is not on PATH:
 
 ```bash
-/Users/adamthompson/Documents/Dev/github/sandpilot/bin/sandpilot run "describe the task here" --cwd . --stream
+/Users/adamthompson/Documents/Dev/github/sandpilot/bin/sandpilot run "describe the task here" --cwd . --apply --detach
 ```
 
 ## Slash Commands

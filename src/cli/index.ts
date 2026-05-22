@@ -1,14 +1,16 @@
 #!/usr/bin/env bun
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SandpilotDaemon } from "../daemon/server";
+import { parseRunArgs } from "./runArgs";
 import { packageRepo } from "../git/packageRepo";
 import { loadClientConfig, loadDaemonConfig } from "../shared/config";
 import { apiFetch } from "../shared/http";
 import { commandExists, runCommand } from "../shared/shell";
-import type { JobEvent, JobRecord, SubmitJobResponse } from "../shared/types";
+import type { JobEvent, JobRecord, SubmitJobRequest, SubmitJobResponse } from "../shared/types";
 
 const args = process.argv.slice(2);
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -37,6 +39,11 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === "daemon" && subcommand === "sandbox-doctor") {
+    await sandboxDoctor();
+    return;
+  }
+
   if (command === "setup" && subcommand === "agents") {
     await runProjectScript("scripts/install-local.sh");
     return;
@@ -52,6 +59,7 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === "watch-apply" && subcommand) return watchApply(subcommand, rest);
   if (command === "status" && subcommand) return status(subcommand);
   if (command === "logs" && subcommand) return logs(subcommand);
   if (command === "patch" && subcommand) return patch(subcommand);
@@ -66,11 +74,18 @@ async function main(): Promise<void> {
 async function run(inputArgs: string[]): Promise<void> {
   const options = parseRunArgs(inputArgs);
   const config = loadClientConfig();
-  const request = await packageRepo({
-    cwd: options.cwd,
-    prompt: options.prompt,
-    model: options.model ?? config.defaultModel,
-  });
+  const request: SubmitJobRequest = options.continueSession
+    ? {
+        prompt: options.prompt,
+        model: options.model ?? config.defaultModel,
+        sessionMode: "continue",
+        sessionId: options.continueSession,
+      }
+    : await packageRepo({
+        cwd: options.cwd,
+        prompt: options.prompt,
+        model: options.model ?? config.defaultModel,
+      });
 
   if (request.warning) console.warn(`warning: ${request.warning}`);
   const response = await apiFetch<SubmitJobResponse>(config, "/v1/jobs", {
@@ -79,10 +94,29 @@ async function run(inputArgs: string[]): Promise<void> {
   });
 
   console.log(`submitted ${response.job.id}`);
+  if (response.job.sessionId) console.log(`session ${response.job.sessionId}`);
   console.log(`repo ${response.job.repoName} @ ${response.job.sourceHead.slice(0, 12)}`);
 
   if (options.stream) {
     await streamJob(response.job.id);
+  } else if (options.apply) {
+    if (options.detach) {
+      const logPath = startApplyWatcher(response.job.id, options.cwd);
+      console.log(`auto-apply running in background`);
+      console.log(`progress: sandpilot status ${response.job.id}`);
+      console.log(`logs: ${logPath}`);
+      return;
+    }
+    const job = await waitForJob(response.job.id);
+    console.log(`job ${job.status}`);
+    if (job.status !== "succeeded") {
+      console.log(`logs: sandpilot logs ${response.job.id}`);
+      process.exitCode = 1;
+      return;
+    }
+    await applyPatch(response.job.id, options.cwd);
+    console.log(`applied ${response.job.id}`);
+    console.log("review: git diff");
   }
 }
 
@@ -115,6 +149,7 @@ async function status(jobId: string): Promise<void> {
   const config = loadClientConfig();
   const { job } = await apiFetch<{ job: JobRecord }>(config, `/v1/jobs/${jobId}`);
   console.log(`${job.id} ${job.status}`);
+  if (job.sessionId) console.log(`session: ${job.sessionId}`);
   console.log(`repo: ${job.repoName}`);
   console.log(`branch: ${job.sourceBranch}`);
   console.log(`head: ${job.sourceHead}`);
@@ -132,12 +167,66 @@ async function patch(jobId: string): Promise<void> {
 }
 
 async function apply(jobId: string): Promise<void> {
+  await applyPatch(jobId, process.cwd());
+  console.log(`applied ${jobId}`);
+}
+
+async function watchApply(jobId: string, inputArgs: string[]): Promise<void> {
+  const cwd = parseCwdFlag(inputArgs);
+  console.log(`watching ${jobId}`);
+  const job = await waitForJob(jobId);
+  console.log(`job ${job.status}`);
+  if (job.status !== "succeeded") {
+    console.log(`logs: sandpilot logs ${jobId}`);
+    process.exitCode = 1;
+    return;
+  }
+  await applyPatch(jobId, cwd);
+  console.log(`applied ${jobId}`);
+}
+
+async function applyPatch(jobId: string, cwd: string): Promise<void> {
   const patchText = await fetchText(`/v1/jobs/${jobId}/patch`);
+  if (!patchText.trim()) {
+    console.log(`no patch to apply for ${jobId}`);
+    return;
+  }
   const tempDir = mkdtempSync(join(tmpdir(), "sandpilot-apply-"));
   const patchPath = join(tempDir, "result.patch");
   writeFileSync(patchPath, patchText);
-  await runCommand(["git", "apply", "--whitespace=nowarn", patchPath], { cwd: process.cwd() });
-  console.log(`applied ${jobId}`);
+  await runCommand(["git", "apply", "--whitespace=nowarn", patchPath], { cwd });
+}
+
+function startApplyWatcher(jobId: string, cwd: string): string {
+  const logDir = join(homedir(), ".sandpilot", "apply");
+  mkdirSync(logDir, { recursive: true });
+  const logPath = join(logDir, `${jobId}.log`);
+  const proc = Bun.spawn(
+    ["bun", "run", fileURLToPath(import.meta.url), "watch-apply", jobId, "--cwd", cwd],
+    {
+      cwd,
+      stdin: "ignore",
+      stdout: Bun.file(logPath),
+      stderr: Bun.file(logPath),
+      detached: true,
+    },
+  );
+  proc.unref();
+  return logPath;
+}
+
+function parseCwdFlag(inputArgs: string[]): string {
+  let cwd = process.cwd();
+  for (let index = 0; index < inputArgs.length; index += 1) {
+    const value = inputArgs[index];
+    if (value === "--cwd" || value === "-C") {
+      const next = inputArgs[index + 1];
+      if (!next) throw new Error(`${value} requires a directory`);
+      cwd = resolve(next);
+      index += 1;
+    }
+  }
+  return cwd;
 }
 
 async function cancel(jobId: string): Promise<void> {
@@ -150,7 +239,7 @@ async function list(): Promise<void> {
   const config = loadClientConfig();
   const response = await apiFetch<{ jobs: JobRecord[] }>(config, "/v1/jobs");
   for (const job of response.jobs) {
-    console.log(`${job.id}\t${job.status}\t${job.repoName}\t${job.createdAt}`);
+    console.log(`${job.id}\t${job.sessionId ?? "-"}\t${job.status}\t${job.repoName}\t${job.createdAt}`);
   }
 }
 
@@ -163,6 +252,17 @@ async function fetchText(path: string): Promise<string> {
   return response.text();
 }
 
+async function waitForJob(jobId: string): Promise<JobRecord> {
+  const config = loadClientConfig();
+  while (true) {
+    const { job } = await apiFetch<{ job: JobRecord }>(config, `/v1/jobs/${jobId}`);
+    if (["succeeded", "failed", "cancelled"].includes(job.status)) {
+      return job;
+    }
+    await Bun.sleep(2000);
+  }
+}
+
 async function doctor(): Promise<void> {
   const config = loadDaemonConfig();
   console.log(`config: ${JSON.stringify({ ...config, token: "***" }, null, 2)}`);
@@ -171,6 +271,28 @@ async function doctor(): Promise<void> {
   console.log(`codex: ${(await commandExists("codex")) ? "ok" : "missing on host; container image still needs it"}`);
   console.log(`jobs: ${config.jobsDir}`);
   console.log(`codexHome: ${config.codexHome}`);
+}
+
+async function sandboxDoctor(): Promise<void> {
+  const config = loadDaemonConfig();
+  const proc = Bun.spawn(
+    [
+      "docker",
+      "run",
+      "--rm",
+      config.imageName,
+      "bash",
+      "/opt/sandpilot/sandbox-doctor.sh",
+    ],
+    {
+      stdout: "inherit",
+      stderr: "inherit",
+    },
+  );
+  const exitCode = await proc.exited;
+  if (exitCode !== 0) {
+    throw new Error(`Sandbox doctor failed with exit code ${exitCode}`);
+  }
 }
 
 async function runProjectScript(relativePath: string): Promise<void> {
@@ -186,50 +308,17 @@ async function runProjectScript(relativePath: string): Promise<void> {
   }
 }
 
-function parseRunArgs(inputArgs: string[]): {
-  prompt: string;
-  cwd: string;
-  stream: boolean;
-  model: string | null;
-} {
-  let cwd = process.cwd();
-  let stream = false;
-  let model: string | null = null;
-  const promptParts: string[] = [];
-
-  for (let index = 0; index < inputArgs.length; index += 1) {
-    const value = inputArgs[index];
-    if (value === "--cwd" || value === "-C") {
-      const next = inputArgs[index + 1];
-      if (!next) throw new Error(`${value} requires a directory`);
-      cwd = resolve(next);
-      index += 1;
-    } else if (value === "--model" || value === "-m") {
-      const next = inputArgs[index + 1];
-      if (!next) throw new Error(`${value} requires a model`);
-      model = next;
-      index += 1;
-    } else if (value === "--stream") {
-      stream = true;
-    } else if (value) {
-      promptParts.push(value);
-    }
-  }
-
-  const prompt = promptParts.join(" ").trim();
-  if (!prompt) throw new Error("run requires a prompt");
-  return { prompt, cwd, stream, model };
-}
-
 function printHelp(): void {
   console.log(`sandpilot
 
 Usage:
   sandpilot daemon start
   sandpilot daemon doctor
+  sandpilot daemon sandbox-doctor
   sandpilot setup agents
   sandpilot doctor agents
-  sandpilot run "prompt" [--cwd .] [--model gpt-5.4] [--stream]
+  sandpilot run "prompt" [--cwd .] [--model gpt-5.4] [--stream] [--apply] [--detach] [--new-session]
+  sandpilot run "prompt" --continue <session-id> [--model gpt-5.4] [--stream] [--apply] [--detach]
   sandpilot status <job-id>
   sandpilot logs <job-id>
   sandpilot patch <job-id>

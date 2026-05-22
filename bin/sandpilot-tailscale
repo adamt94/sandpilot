@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ACTION="${1:-status}"
+TS_BIN="${SANDPILOT_TAILSCALE_BIN:-/opt/homebrew/opt/tailscale/bin/tailscale}"
+TSD_BIN="${SANDPILOT_TAILSCALED_BIN:-/opt/homebrew/opt/tailscale/bin/tailscaled}"
+BASE_DIR="${HOME}/.sandpilot/tailscale"
+SOCKET="${SANDPILOT_TAILSCALE_SOCKET:-${BASE_DIR}/tailscaled.sock}"
+STATE_DIR="${SANDPILOT_TAILSCALE_STATE_DIR:-${BASE_DIR}/state}"
+PROXY_PORT="${SANDPILOT_TAILSCALE_PROXY_PORT:-1056}"
+PLIST="${HOME}/Library/LaunchAgents/com.sandpilot.tailscale-userspace.plist"
+LOG_PATH="${BASE_DIR}/tailscaled.log"
+HOSTNAME="${SANDPILOT_TAILSCALE_HOSTNAME:-sandpilot-client}"
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  sandpilot-tailscale start
+  sandpilot-tailscale login [hostname]
+  sandpilot-tailscale status
+  sandpilot-tailscale stop
+USAGE
+}
+
+write_plist() {
+  mkdir -p "${BASE_DIR}" "$(dirname "${PLIST}")"
+  cat > "${PLIST}" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.sandpilot.tailscale-userspace</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${TSD_BIN}</string>
+    <string>--socket=${SOCKET}</string>
+    <string>--statedir=${STATE_DIR}</string>
+    <string>--tun=userspace-networking</string>
+    <string>--socks5-server=127.0.0.1:${PROXY_PORT}</string>
+    <string>--outbound-http-proxy-listen=127.0.0.1:${PROXY_PORT}</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>${LOG_PATH}</string>
+  <key>StandardErrorPath</key>
+  <string>${LOG_PATH}</string>
+</dict>
+</plist>
+PLIST
+  chmod 600 "${PLIST}"
+}
+
+case "${ACTION}" in
+  start)
+    write_plist
+    launchctl bootout "gui/$(id -u)" "${PLIST}" >/dev/null 2>&1 || true
+    launchctl bootstrap "gui/$(id -u)" "${PLIST}"
+    launchctl kickstart -k "gui/$(id -u)/com.sandpilot.tailscale-userspace"
+    echo "started Sandpilot Tailscale userspace daemon"
+    ;;
+  login)
+    HOSTNAME="${2:-${HOSTNAME}}"
+    "${TS_BIN}" --socket="${SOCKET}" up --hostname "${HOSTNAME}" --ssh
+    ;;
+  status)
+    "${TS_BIN}" --socket="${SOCKET}" status
+    ;;
+  stop)
+    launchctl bootout "gui/$(id -u)" "${PLIST}" >/dev/null 2>&1 || true
+    echo "stopped Sandpilot Tailscale userspace daemon"
+    ;;
+  *)
+    usage
+    exit 2
+    ;;
+esac

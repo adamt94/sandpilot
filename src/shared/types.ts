@@ -6,8 +6,11 @@ export type JobStatus =
   | "failed"
   | "cancelled";
 
+export type SessionMode = "new" | "continue";
+
 export type JobRecord = {
   id: string;
+  sessionId: string | null;
   repoName: string;
   sourceHead: string;
   sourceBranch: string;
@@ -21,14 +24,26 @@ export type JobRecord = {
   exitCode: number | null;
 };
 
-export type SubmitJobRequest = {
+export type SessionRecord = {
+  id: string;
   repoName: string;
   sourceHead: string;
   sourceBranch: string;
+  baseline: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type SubmitJobRequest = {
+  sessionMode?: SessionMode;
+  sessionId?: string;
+  repoName?: string;
+  sourceHead?: string;
+  sourceBranch?: string;
   prompt: string;
   model: string;
-  bundleBase64: string;
-  diff: string;
+  bundleBase64?: string;
+  diff?: string;
   warning?: string;
 };
 
@@ -74,6 +89,7 @@ export type ClientConfig = {
 export type RunnerInput = {
   job: JobRecord;
   jobDir: string;
+  sessionDir: string;
   repoDir: string;
   bundlePath: string;
   diffPath: string;

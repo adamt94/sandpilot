@@ -23,9 +23,15 @@ Submit the current repository and prompt to the Sandpilot Mac mini Docker sandbo
 3. Submit the job from the current git repository:
 
    ```bash
-   sandpilot run "$ARGUMENTS" --cwd . --stream
+   sandpilot run "$ARGUMENTS" --cwd . --apply --detach
    ```
 
-4. Report the job id, final status, and patch command.
+4. To continue an existing sandbox session instead of starting fresh:
 
-Do not run `sandpilot apply <job-id>` unless the user explicitly asks.
+   ```bash
+   sandpilot run "$ARGUMENTS" --continue <session-id> --apply --detach
+   ```
+
+5. Report the job id, final status, session id, and whether the patch was applied.
+
+Do not run an additional `sandpilot apply <job-id>` unless automatic apply failed or the user explicitly asks.

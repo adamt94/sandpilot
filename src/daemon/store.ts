@@ -1,10 +1,11 @@
 import { mkdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
-import type { ArtifactKind, ArtifactRecord, JobEvent, JobRecord, JobStatus } from "../shared/types";
+import type { ArtifactKind, ArtifactRecord, JobEvent, JobRecord, JobStatus, SessionRecord } from "../shared/types";
 
 type JobRow = {
   id: string;
+  session_id: string | null;
   repo_name: string;
   source_head: string;
   source_branch: string;
@@ -16,6 +17,16 @@ type JobRow = {
   started_at: string | null;
   finished_at: string | null;
   exit_code: number | null;
+};
+
+type SessionRow = {
+  id: string;
+  repo_name: string;
+  source_head: string;
+  source_branch: string;
+  baseline: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 type EventRow = {
@@ -42,8 +53,19 @@ export class JobStore {
     mkdirSync(dir, { recursive: true });
     this.db = new Database(join(dir, "sandpilot.sqlite"));
     this.db.exec(`
+      create table if not exists sessions (
+        id text primary key,
+        repo_name text not null,
+        source_head text not null,
+        source_branch text not null,
+        baseline text,
+        created_at text not null,
+        updated_at text not null
+      );
+
       create table if not exists jobs (
         id text primary key,
+        session_id text,
         repo_name text not null,
         source_head text not null,
         source_branch text not null,
@@ -75,10 +97,12 @@ export class JobStore {
         primary key (job_id, kind)
       );
     `);
+    this.ensureJobSessionIdColumn();
   }
 
   createJob(input: {
     id: string;
+    sessionId: string | null;
     repoName: string;
     sourceHead: string;
     sourceBranch: string;
@@ -90,11 +114,12 @@ export class JobStore {
     this.db
       .query(
         `insert into jobs
-        (id, repo_name, source_head, source_branch, status, model, prompt, warning, created_at)
-        values (?, ?, ?, ?, 'queued', ?, ?, ?, ?)`,
+        (id, session_id, repo_name, source_head, source_branch, status, model, prompt, warning, created_at)
+        values (?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?)`,
       )
       .run(
         input.id,
+        input.sessionId,
         input.repoName,
         input.sourceHead,
         input.sourceBranch,
@@ -106,6 +131,48 @@ export class JobStore {
     const job = this.getJob(input.id);
     if (!job) throw new Error("Inserted job could not be read");
     return job;
+  }
+
+  createSession(input: {
+    id: string;
+    repoName: string;
+    sourceHead: string;
+    sourceBranch: string;
+  }): SessionRecord {
+    const now = new Date().toISOString();
+    this.db
+      .query(
+        `insert into sessions
+        (id, repo_name, source_head, source_branch, baseline, created_at, updated_at)
+        values (?, ?, ?, ?, null, ?, ?)`,
+      )
+      .run(input.id, input.repoName, input.sourceHead, input.sourceBranch, now, now);
+    const session = this.getSession(input.id);
+    if (!session) throw new Error("Inserted session could not be read");
+    return session;
+  }
+
+  getSession(id: string): SessionRecord | null {
+    const row = this.db.query("select * from sessions where id = ?").get(id) as SessionRow | null;
+    return row ? mapSession(row) : null;
+  }
+
+  updateSessionBaseline(id: string, baseline: string): void {
+    const now = new Date().toISOString();
+    this.db.query("update sessions set baseline = ?, updated_at = ? where id = ?").run(baseline, now, id);
+  }
+
+  hasActiveJobForSession(sessionId: string): boolean {
+    const row = this.db
+      .query(
+        `select 1
+        from jobs
+        where session_id = ?
+          and status in ('queued', 'preparing', 'running')
+        limit 1`,
+      )
+      .get(sessionId) as { 1: number } | null;
+    return row !== null;
   }
 
   getJob(id: string): JobRecord | null {
@@ -170,11 +237,19 @@ export class JobStore {
       .get(jobId, kind) as ArtifactRow | null;
     return row ? mapArtifact(row) : null;
   }
+
+  private ensureJobSessionIdColumn(): void {
+    const columns = this.db.query("pragma table_info(jobs)").all() as Array<{ name: string }>;
+    if (!columns.some((column) => column.name === "session_id")) {
+      this.db.exec("alter table jobs add column session_id text");
+    }
+  }
 }
 
 function mapJob(row: JobRow): JobRecord {
   return {
     id: row.id,
+    sessionId: row.session_id,
     repoName: row.repo_name,
     sourceHead: row.source_head,
     sourceBranch: row.source_branch,
@@ -186,6 +261,18 @@ function mapJob(row: JobRow): JobRecord {
     startedAt: row.started_at,
     finishedAt: row.finished_at,
     exitCode: row.exit_code,
+  };
+}
+
+function mapSession(row: SessionRow): SessionRecord {
+  return {
+    id: row.id,
+    repoName: row.repo_name,
+    sourceHead: row.source_head,
+    sourceBranch: row.source_branch,
+    baseline: row.baseline,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 

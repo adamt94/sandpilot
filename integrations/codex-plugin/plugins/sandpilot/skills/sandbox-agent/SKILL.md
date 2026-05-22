@@ -16,7 +16,13 @@ sandpilot-tunnel
 Run a task from a git repo:
 
 ```bash
-sandpilot run "<prompt>" --cwd . --stream
+sandpilot run "<prompt>" --cwd . --apply --detach
+```
+
+Continue an existing sandbox session:
+
+```bash
+sandpilot run "<prompt>" --continue <session-id> --apply --detach
 ```
 
 Inspect results:
@@ -27,8 +33,4 @@ sandpilot logs <job-id>
 sandpilot patch <job-id>
 ```
 
-Only apply a returned patch when the user explicitly asks:
-
-```bash
-sandpilot apply <job-id>
-```
+Agent-triggered runs use `--apply --detach`, so the parent agent exits after submission while a local watcher applies the patch when the remote job finishes. Only run a separate `sandpilot apply <job-id>` if automatic apply failed or the user asks.
