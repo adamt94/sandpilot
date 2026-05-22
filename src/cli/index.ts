@@ -70,6 +70,7 @@ async function main(): Promise<void> {
   if (command === "setup" && subcommand === "wake-agent") return setupWakeAgent();
   if (command === "dashboard") return openDashboard();
   if (command === "update") return update();
+  if (command === "tunnel") return tunnel(rest);
 
   printHelp();
   process.exitCode = 1;
@@ -424,6 +425,16 @@ async function runProjectScript(relativePath: string): Promise<void> {
   }
 }
 
+async function tunnel(inputArgs: string[]): Promise<void> {
+  const tunnelBin = join(projectRoot, "bin", "sandpilot-tunnel");
+  const stop = inputArgs.includes("--stop");
+  const detach = inputArgs.includes("--detach");
+  const args = [tunnelBin];
+  if (stop) args.push("--stop");
+  else if (detach) args.push("--detach");
+  await runLive(args);
+}
+
 async function update(): Promise<void> {
   const remotePath = join(homedir(), ".sandpilot", "remote");
   if (!existsSync(remotePath)) {
@@ -494,6 +505,7 @@ Usage:
   sandpilot apply <job-id>
   sandpilot cancel <job-id>
   sandpilot list
+  sandpilot tunnel [--detach] [--stop]
   sandpilot pending [--apply]
   sandpilot dashboard
   sandpilot update

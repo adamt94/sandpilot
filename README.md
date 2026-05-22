@@ -79,10 +79,22 @@ sandpilot setup agents
 sandpilot doctor agents
 ```
 
-Open the tunnel in one terminal:
+Open the tunnel in the background (no terminal needed):
 
 ```bash
-sandpilot-tunnel
+sandpilot tunnel --detach
+```
+
+Or keep it in the foreground if you prefer:
+
+```bash
+sandpilot tunnel
+```
+
+Stop it later with:
+
+```bash
+sandpilot tunnel --stop
 ```
 
 Away from the same network, use Tailscale and save the Mac mini Tailnet SSH target:
