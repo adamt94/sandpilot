@@ -70,7 +70,7 @@ async function main(): Promise<void> {
   if (command === "setup" && subcommand === "wake-agent") return setupWakeAgent();
   if (command === "dashboard") return openDashboard();
   if (command === "update") return update();
-  if (command === "tunnel") return tunnel(rest);
+  if (command === "tunnel") return tunnel([subcommand, ...rest].filter(Boolean) as string[]);
 
   printHelp();
   process.exitCode = 1;
