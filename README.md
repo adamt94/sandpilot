@@ -28,6 +28,12 @@ Replace `nova@novas-mac-mini.local` with your Mac mini SSH target. Bootstrap ins
 ssh -t nova@novas-mac-mini.local 'claude auth login'
 ```
 
+**Then store your Anthropic API key** (get one from [console.anthropic.com](https://console.anthropic.com/settings/keys)):
+
+```bash
+sandpilot setup api-key sk-ant-...
+```
+
 ---
 
 ## Every Session

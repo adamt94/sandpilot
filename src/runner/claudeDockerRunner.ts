@@ -1,15 +1,11 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { DaemonConfig, RunnerInput } from "../shared/types";
 import { commandExists } from "../shared/shell";
 import type { JobStore } from "../daemon/store";
 
 function resolveApiKey(config: DaemonConfig): string | null {
-  // 1. explicit env var
-  if (process.env.ANTHROPIC_API_KEY) return process.env.ANTHROPIC_API_KEY;
-  // 2. stored in daemon config via `sandpilot setup api-key`
-  if (config.anthropicApiKey) return config.anthropicApiKey;
-  return null;
+  return process.env.ANTHROPIC_API_KEY ?? config.anthropicApiKey ?? null;
 }
 
 export async function runClaudeInDocker(input: {
@@ -22,39 +18,21 @@ export async function runClaudeInDocker(input: {
     throw new Error("Docker is not available on PATH on the daemon host");
   }
 
-  if (!existsSync(input.config.claudeHome)) {
-    throw new Error(`Claude home does not exist on daemon host: ${input.config.claudeHome}`);
-  }
-
   const logPath = join(input.runner.jobDir, "claude.jsonl");
   const logFile = Bun.file(logPath);
   const writer = logFile.writer();
 
-  const claudeJsonPath = `${input.config.claudeHome}.json`;
-  const args: string[] = [
-    "docker",
-    "run",
-    "--rm",
-    "-v",
-    `${input.runner.repoDir}:/workspace`,
-    "-v",
-    `${input.config.claudeHome}:/home/node/.claude`,
-    "-w",
-    "/workspace",
-    "-e",
-    "CLAUDE_HOME=/home/node/.claude",
-  ];
-
-  if (existsSync(claudeJsonPath)) {
-    args.push("-v", `${claudeJsonPath}:/home/node/.claude.json:ro`);
-  }
-
   const apiKey = resolveApiKey(input.config);
-  if (apiKey) {
-    args.push("-e", `ANTHROPIC_API_KEY=${apiKey}`);
-  } else {
-    input.store.addEvent(input.runner.job.id, "info", "No API key found — container will rely on mounted credentials");
+  if (!apiKey) {
+    throw new Error("No ANTHROPIC_API_KEY found — run: sandpilot setup api-key <key>");
   }
+
+  const args: string[] = [
+    "docker", "run", "--rm",
+    "-v", `${input.runner.repoDir}:/workspace`,
+    "-w", "/workspace",
+    "-e", `ANTHROPIC_API_KEY=${apiKey}`,
+  ];
 
   args.push(
     input.config.claudeImageName,
