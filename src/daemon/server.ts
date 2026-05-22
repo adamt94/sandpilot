@@ -6,6 +6,7 @@ import { loadDaemonConfig } from "../shared/config";
 import { JobStore } from "./store";
 import { prepareRepo, runCodexInDocker, writePatchAndSummary } from "../runner/codexDockerRunner";
 import { runClaudeInDocker } from "../runner/claudeDockerRunner";
+import { getModelProvider } from "../shared/models";
 import { runCommand } from "../shared/shell";
 
 const USAGE_LIMIT_PATTERNS = [
@@ -18,7 +19,7 @@ const USAGE_LIMIT_PATTERNS = [
 ];
 
 function isClaudeModel(model: string): boolean {
-  return model.startsWith("claude");
+  return getModelProvider(model) === "anthropic" || model.startsWith("claude");
 }
 
 function eventsContainUsageLimit(store: JobStore, jobId: string): boolean {
@@ -88,24 +89,59 @@ export class SandpilotDaemon {
     const jobDir = join(this.config.jobsDir, id);
     mkdirSync(jobDir, { recursive: true });
 
-    const bundlePath = join(jobDir, "repo.bundle");
-    const diffPath = join(jobDir, "input.diff");
-    writeFileSync(bundlePath, Buffer.from(body.bundleBase64, "base64"));
-    writeFileSync(diffPath, body.diff);
+    const requestedMode = body.sessionMode ?? (body.sessionId ? "continue" : "new");
+    let job: JobRecord;
 
-    const job = this.store.createJob({
-      id,
-      repoName: body.repoName,
-      sourceHead: body.sourceHead,
-      sourceBranch: body.sourceBranch,
-      model: body.model,
-      prompt: body.prompt,
-      warning: body.warning ?? null,
-    });
-    this.store.upsertArtifact(id, "bundle", bundlePath);
-    this.store.upsertArtifact(id, "input-diff", diffPath);
-    this.store.addEvent(id, "info", "Job submitted");
-    if (body.warning) this.store.addEvent(id, "info", body.warning);
+    if (requestedMode === "continue") {
+      if (!body.sessionId) return text("sessionId is required to continue a session", 400);
+      const session = this.store.getSession(body.sessionId);
+      if (!session) return text("session not found", 404);
+      if (!session.baseline) return text("session is not ready to continue yet", 409);
+      if (this.store.hasActiveJobForSession(session.id)) return text("session already has an active job", 409);
+
+      job = this.store.createJob({
+        id,
+        sessionId: session.id,
+        repoName: session.repoName,
+        sourceHead: session.sourceHead,
+        sourceBranch: session.sourceBranch,
+        model: body.model,
+        prompt: body.prompt,
+        warning: null,
+      });
+      this.store.addEvent(id, "info", `Job submitted for existing session ${session.id}`);
+    } else {
+      if (!body.repoName || !body.sourceHead || !body.sourceBranch || body.bundleBase64 === undefined || body.diff === undefined) {
+        return text("repoName, sourceHead, sourceBranch, bundleBase64, and diff are required for a new session", 400);
+      }
+
+      const session = this.store.createSession({
+        id: `session_${Date.now()}_${randomUUID().slice(0, 8)}`,
+        repoName: body.repoName,
+        sourceHead: body.sourceHead,
+        sourceBranch: body.sourceBranch,
+      });
+
+      const bundlePath = join(jobDir, "repo.bundle");
+      const diffPath = join(jobDir, "input.diff");
+      writeFileSync(bundlePath, Buffer.from(body.bundleBase64, "base64"));
+      writeFileSync(diffPath, body.diff);
+
+      job = this.store.createJob({
+        id,
+        sessionId: session.id,
+        repoName: body.repoName,
+        sourceHead: body.sourceHead,
+        sourceBranch: body.sourceBranch,
+        model: body.model,
+        prompt: body.prompt,
+        warning: body.warning ?? null,
+      });
+      this.store.upsertArtifact(id, "bundle", bundlePath);
+      this.store.upsertArtifact(id, "input-diff", diffPath);
+      this.store.addEvent(id, "info", `Job submitted for new session ${session.id}`);
+      if (body.warning) this.store.addEvent(id, "info", body.warning);
+    }
 
     this.processQueue();
     return json({ job } satisfies SubmitJobResponse, 202);
@@ -176,7 +212,8 @@ export class SandpilotDaemon {
     const runner = {
       job,
       jobDir,
-      repoDir: join(jobDir, "repo"),
+      sessionDir: join(this.config.jobsDir, "sessions", job.sessionId ?? job.id),
+      repoDir: join(this.config.jobsDir, "sessions", job.sessionId ?? job.id, "repo"),
       bundlePath: join(jobDir, "repo.bundle"),
       diffPath: join(jobDir, "input.diff"),
     };

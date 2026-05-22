@@ -27,15 +27,17 @@ ssh -N -L 7349:127.0.0.1:7349 mac-mini
 Execute:
 
 ```bash
-sandpilot run "$ARGUMENTS" --cwd . --stream
+sandpilot run "$ARGUMENTS" --cwd . --apply --detach
 ```
 
 If `sandpilot` is not on PATH, execute:
 
 ```bash
-bun run /Users/adamthompson/Documents/Dev/github/sandpilot/src/cli/index.ts run "$ARGUMENTS" --cwd . --stream
+bun run /Users/adamthompson/Documents/Dev/github/sandpilot/src/cli/index.ts run "$ARGUMENTS" --cwd . --apply --detach
 ```
 
 ## Response
 
-Report the job id, final status, and patch command. Do not apply the patch unless the user explicitly asks.
+Default behavior is fire-and-forget. After `sandpilot run` returns, report only the submitted job id, session id, that auto-apply is running in the background, and that the user can review later with `git diff`. Then stop.
+
+Do not poll `sandpilot status`, sleep, tail logs, or wait for completion unless the user explicitly asks for progress, status, logs, or the final result.

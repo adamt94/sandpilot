@@ -1,4 +1,56 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-exec ssh -N -L 7349:127.0.0.1:7349 nova@novas-mac-mini.local
+CONFIG_DIR="${HOME}/.sandpilot"
+REMOTE_FILE="${CONFIG_DIR}/remote"
+LOCAL_PORT="${SANDPILOT_LOCAL_PORT:-7349}"
+REMOTE_PORT="${SANDPILOT_REMOTE_PORT:-7349}"
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  sandpilot-tunnel [user@host]
+  sandpilot-tunnel --set user@host
+
+Examples:
+  sandpilot-tunnel nova@novas-mac-mini.local
+  sandpilot-tunnel --set nova@novas-mac-mini.tailnet-name.ts.net
+  sandpilot-tunnel --set nova@100.x.y.z
+USAGE
+}
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  usage
+  exit 0
+fi
+
+if [[ "${1:-}" == "--set" ]]; then
+  if [[ -z "${2:-}" ]]; then
+    usage
+    exit 2
+  fi
+  mkdir -p "${CONFIG_DIR}"
+  printf '%s\n' "$2" > "${REMOTE_FILE}"
+  chmod 600 "${REMOTE_FILE}"
+  echo "Saved Sandpilot SSH target: $2"
+  exit 0
+fi
+
+REMOTE="${1:-${SANDPILOT_REMOTE:-}}"
+if [[ -z "${REMOTE}" && -f "${REMOTE_FILE}" ]]; then
+  REMOTE="$(head -n 1 "${REMOTE_FILE}")"
+fi
+REMOTE="${REMOTE:-nova@novas-mac-mini.local}"
+
+HOST="${REMOTE##*@}"
+TAILSCALE_SOCKET="${SANDPILOT_TAILSCALE_SOCKET:-${HOME}/.sandpilot/tailscale/tailscaled.sock}"
+SSH_ARGS=()
+
+if [[ -S "${TAILSCALE_SOCKET}" ]] && [[ "${HOST}" == 100.* || "${HOST}" == *.ts.net ]]; then
+  SSH_ARGS+=(
+    -o
+    "ProxyCommand=tailscale --socket=${TAILSCALE_SOCKET} nc %h %p"
+  )
+fi
+
+exec ssh "${SSH_ARGS[@]}" -N -L "${LOCAL_PORT}:127.0.0.1:${REMOTE_PORT}" "${REMOTE}"

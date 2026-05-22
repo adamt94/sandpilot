@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { randomBytes } from "node:crypto";
 import type { ClientConfig, DaemonConfig } from "./types";
+import { getDefaultModel } from "./models";
 
 const appDir = join(homedir(), ".sandpilot");
 
@@ -47,7 +48,7 @@ export function loadDaemonConfig(): DaemonConfig {
     jobsDir: join(sandpilotDir(), "jobs"),
     codexHome: join(homedir(), ".codex"),
     claudeHome: join(homedir(), ".claude"),
-    codexFallbackModel: "gpt-4o",
+    codexFallbackModel: getDefaultModel("openai"),
     maxConcurrentJobs: 1,
   };
   writeJson(path, created);
@@ -60,11 +61,15 @@ export function loadClientConfig(): ClientConfig {
   const existing = readJson<ClientConfig>(path);
   if (existing) return existing;
 
-  const created: ClientConfig = {
-    baseUrl: "http://127.0.0.1:7349",
-    token: daemon?.token ?? token(),
-    defaultModel: "claude-sonnet-4-5",
-  };
+  const created = createDefaultClientConfig(daemon);
   writeJson(path, created);
   return created;
+}
+
+export function createDefaultClientConfig(daemon: DaemonConfig | null = null): ClientConfig {
+  return {
+    baseUrl: "http://127.0.0.1:7349",
+    token: daemon?.token ?? token(),
+    defaultModel: getDefaultModel(),
+  };
 }

@@ -1,0 +1,13 @@
+{
+  "defaultProvider": "anthropic",
+  "providers": {
+    "anthropic": {
+      "defaultModel": "claude-sonnet-4-5",
+      "models": ["claude-sonnet-4-5", "claude-opus-4-5"]
+    },
+    "openai": {
+      "defaultModel": "gpt-4o",
+      "models": ["gpt-4o"]
+    }
+  }
+}

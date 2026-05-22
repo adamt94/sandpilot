@@ -89,6 +89,7 @@ mkdir -p .docker-no-creds
 printf '{}\n' > .docker-no-creds/config.json
 DOCKER_CONFIG="$PWD/.docker-no-creds" docker build -t sandpilot-codex:latest -f docker/Dockerfile.codex .
 DOCKER_CONFIG="$PWD/.docker-no-creds" docker build -t sandpilot-claude:latest -f docker/Dockerfile.claude .
+docker run --rm sandpilot-codex:latest bash /opt/sandpilot/sandbox-doctor.sh
 
 mkdir -p "$HOME/.sandpilot"
 pkill -f "src/cli/index.ts daemon start" >/dev/null 2>&1 || true
@@ -115,12 +116,18 @@ REMOTE_SCRIPT
 echo
 echo "==> Syncing daemon token to local client config"
 REMOTE_CONFIG="$(ssh "${REMOTE}" 'cat ~/.sandpilot/daemon.json')"
-REMOTE_CONFIG="${REMOTE_CONFIG}" node <<'NODE'
+REMOTE_CONFIG="${REMOTE_CONFIG}" REMOTE_TARGET="${REMOTE}" SANDPILOT_ROOT_DIR="${ROOT_DIR}" node <<'NODE'
 const fs = require("node:fs")
 const os = require("node:os")
 const path = require("node:path")
 
 const daemon = JSON.parse(process.env.REMOTE_CONFIG)
+const registry = JSON.parse(
+  fs.readFileSync(path.join(process.env.SANDPILOT_ROOT_DIR, "src/shared/models.json"), "utf8"),
+)
+const provider = registry.providers[registry.defaultProvider]
+if (!provider) throw new Error(`Unknown default model provider: ${registry.defaultProvider}`)
+
 const dir = path.join(os.homedir(), ".sandpilot")
 fs.mkdirSync(dir, { recursive: true })
 fs.writeFileSync(
@@ -129,13 +136,14 @@ fs.writeFileSync(
     {
       baseUrl: `http://127.0.0.1:${daemon.port}`,
       token: daemon.token,
-      defaultModel: "claude-sonnet-4-5",
+      defaultModel: provider.defaultModel,
     },
     null,
     2,
   )}\n`,
   { mode: 0o600 },
 )
+fs.writeFileSync(path.join(dir, "remote"), `${process.env.REMOTE_TARGET}\n`, { mode: 0o600 })
 NODE
 
 echo
@@ -156,7 +164,7 @@ echo "Start the tunnel:"
 echo "  sandpilot-tunnel"
 echo
 echo "Run from any git repo:"
-echo "  sandpilot run \"your task\" --cwd . --stream"
+echo "  sandpilot run \"your task\" --cwd . --apply --detach"
 echo
 if ! ssh "${REMOTE}" 'test -f ~/.codex/auth.json'; then
   echo "Before Codex fallback jobs, log Codex in on the Mac mini:"

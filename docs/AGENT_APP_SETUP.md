@@ -36,6 +36,12 @@ Start the tunnel:
 sandpilot-tunnel
 ```
 
+Away from the same network, first save the Mac mini Tailscale target:
+
+```bash
+sandpilot-tunnel --set nova@<mac-mini-tailnet-name-or-100.x-ip>
+```
+
 Then use one of these in your agent app:
 
 ```text
@@ -51,13 +57,26 @@ Use $sandbox-agent to run this in the Mac mini sandbox: fix the failing tests
 The agent should submit:
 
 ```bash
-sandpilot run "fix the failing tests" --cwd . --stream
+sandpilot run "fix the failing tests" --cwd . --apply --detach
 ```
 
-and return the patch command:
+For follow-up work in the same remote sandbox state, the agent can submit:
 
 ```bash
+sandpilot run "continue the sandbox work" --continue <session-id> --apply --detach
+```
+
+and then stop. If automatic apply later fails, inspect:
+
+```bash
+sandpilot logs <job-id>
 sandpilot patch <job-id>
+```
+
+If a job says Bun or another common tool is missing inside Docker, rebuild the Mac mini image:
+
+```bash
+ssh nova@novas-mac-mini.local 'cd ~/sandpilot && DOCKER_CONFIG=$PWD/.docker-no-creds docker build -t sandpilot-codex:latest -f docker/Dockerfile.codex .'
 ```
 
 ## Notes

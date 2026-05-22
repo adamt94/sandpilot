@@ -8,6 +8,9 @@
   },
   "scripts": {
     "check": "tsc --noEmit",
+    "test": "bun test",
+    "docker:build": "docker build -t sandpilot-codex:latest -f docker/Dockerfile.codex .",
+    "docker:doctor": "docker run --rm sandpilot-codex:latest bash /opt/sandpilot/sandbox-doctor.sh",
     "start:daemon": "bun run src/cli/index.ts daemon start",
     "doctor": "bun run src/cli/index.ts daemon doctor"
   },
