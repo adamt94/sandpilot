@@ -67,6 +67,7 @@ async function main(): Promise<void> {
   if (command === "cancel" && subcommand) return cancel(subcommand);
   if (command === "list") return list();
   if (command === "pending") return pending(rest);
+  if (command === "start") return start();
   if (command === "setup" && subcommand === "wake-agent") return setupWakeAgent();
   if (command === "dashboard") return openDashboard();
   if (command === "update") return update();
@@ -425,6 +426,67 @@ async function runProjectScript(relativePath: string): Promise<void> {
   }
 }
 
+async function start(): Promise<void> {
+  const config = loadClientConfig();
+
+  // 1. tunnel
+  const tunnelRunning = await isTunnelRunning(config);
+  if (tunnelRunning) {
+    console.log("✓ tunnel already running");
+  } else {
+    console.log("starting tunnel...");
+    const tunnelBin = join(projectRoot, "bin", "sandpilot-tunnel");
+    const proc = Bun.spawn([tunnelBin, "--detach"], { stdout: "inherit", stderr: "inherit" });
+    await proc.exited;
+    await Bun.sleep(1500);
+  }
+
+  // 2. daemon health — restart via SSH if down
+  const healthy = await isDaemonHealthy(config);
+  if (healthy) {
+    console.log("✓ daemon healthy");
+  } else {
+    const remotePath = join(homedir(), ".sandpilot", "remote");
+    if (!existsSync(remotePath)) {
+      throw new Error("daemon unreachable and no remote configured — run scripts/bootstrap.sh first");
+    }
+    const remote = readFileSync(remotePath, "utf8").trim();
+    const remoteDir = process.env.SANDPILOT_REMOTE_DIR ?? "~/sandpilot";
+    console.log("daemon unreachable — restarting on Mac mini...");
+    await runLive([
+      "ssh", remote,
+      [
+        'export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.bun/bin:$PATH"',
+        `cd "${remoteDir}"`,
+        'pkill -f "src/cli/index.ts daemon start" || true',
+        `nohup bun run src/cli/index.ts daemon start > ~/.sandpilot/daemon.log 2>&1 &`,
+        "sleep 2",
+        "curl -fsS http://127.0.0.1:7349/health > /dev/null && echo 'daemon ok'",
+      ].join(" && "),
+    ]);
+  }
+
+  // 3. pending patches
+  console.log("checking for pending patches...");
+  await pending(["--apply"]);
+
+  // 4. summary
+  console.log("\nready — run: sandpilot run \"your task\" --cwd . --apply --detach");
+}
+
+async function isTunnelRunning(config: ReturnType<typeof loadClientConfig>): Promise<boolean> {
+  return isDaemonHealthy(config);
+}
+
+async function isDaemonHealthy(config: ReturnType<typeof loadClientConfig>): Promise<boolean> {
+  try {
+    const r = await fetch(`${config.baseUrl}/health`);
+    return r.ok;
+  } catch {
+    return false;
+  }
+}
+
 async function tunnel(inputArgs: string[]): Promise<void> {
   const tunnelBin = join(projectRoot, "bin", "sandpilot-tunnel");
   const stop = inputArgs.includes("--stop");
@@ -506,6 +568,7 @@ Usage:
   sandpilot cancel <job-id>
   sandpilot list
   sandpilot tunnel [--detach] [--stop]
+  sandpilot start
   sandpilot pending [--apply]
   sandpilot dashboard
   sandpilot update

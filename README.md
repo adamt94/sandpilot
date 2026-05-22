@@ -31,13 +31,13 @@ That's it. You're set up.
 
 ## Every Session
 
-Start the tunnel (runs in the background):
+One command does everything — starts the tunnel, checks the daemon, applies any patches you missed while your laptop was off:
 
 ```bash
-sandpilot tunnel --detach
+sandpilot start
 ```
 
-Verify it's working:
+Then open the dashboard to see what's running:
 
 ```bash
 sandpilot dashboard
