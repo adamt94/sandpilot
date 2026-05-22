@@ -451,7 +451,7 @@ async function start(): Promise<void> {
       throw new Error("daemon unreachable and no remote configured — run scripts/bootstrap.sh first");
     }
     const remote = readFileSync(remotePath, "utf8").trim();
-    const remoteDir = process.env.SANDPILOT_REMOTE_DIR ?? "~/sandpilot";
+    const remoteDir = (process.env.SANDPILOT_REMOTE_DIR ?? "~/sandpilot").replace(/^~/, "$HOME");
     console.log("daemon unreachable — restarting on Mac mini...");
     await runLive([
       "ssh", remote,
@@ -503,7 +503,9 @@ async function update(): Promise<void> {
     throw new Error("no remote configured — run scripts/bootstrap.sh <user@host> first");
   }
   const remote = readFileSync(remotePath, "utf8").trim();
-  const remoteDir = process.env.SANDPILOT_REMOTE_DIR ?? "~/sandpilot";
+  // rsyncDir uses ~ which the remote shell expands; remoteDir uses $HOME for inline SSH scripts
+  const rsyncDir = process.env.SANDPILOT_REMOTE_DIR ?? "~/sandpilot";
+  const remoteDir = rsyncDir.replace(/^~/, "$HOME");
 
   console.log(`remote: ${remote}`);
 
@@ -516,7 +518,7 @@ async function update(): Promise<void> {
     "--exclude", "node_modules",
     "--exclude", ".sandpilot",
     "--exclude", ".git",
-    `${projectRoot}/`, `${remote}:${remoteDir}/`,
+    `${projectRoot}/`, `${remote}:${rsyncDir}/`,
   ]);
 
   console.log("\nrestarting daemon...");
