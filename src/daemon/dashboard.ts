@@ -306,7 +306,7 @@ function attachListeners() {
       e.stopPropagation();
       const id = btn.dataset.copyLogs;
       const events = eventsCache[id] || [];
-      const text = events.map(ev => '[' + ev.type + '] ' + ev.payload).join('\n');
+      const text = events.map(ev => '[' + ev.type + '] ' + ev.payload).join('\\n');
       await navigator.clipboard.writeText(text);
       btn.textContent = '✓ copied';
       btn.classList.add('copied');
