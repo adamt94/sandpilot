@@ -7,8 +7,9 @@ export type JobStatus =
   | "cancelled";
 
 export type SessionMode = "new" | "continue";
+export type DeliveryMode = "patch" | "branch";
 
-export type ThinkingLevel = "low" | "medium" | "high" | "max";
+export type ThinkingLevel = "low" | "medium" | "high" | "max" | "xhigh";
 
 export type JobRecord = {
   id: string;
@@ -16,12 +17,18 @@ export type JobRecord = {
   repoName: string;
   sourceHead: string;
   sourceBranch: string;
+  sourceRemoteUrl: string | null;
   status: JobStatus;
   model: string;
   thinking: ThinkingLevel | null;
+  deliveryMode: DeliveryMode;
+  requestedBranchName: string | null;
   prompt: string;
   warning: string | null;
   clientCwd: string | null;
+  resultBranch: string | null;
+  resultAppliedAt: string | null;
+  resultError: string | null;
   createdAt: string;
   startedAt: string | null;
   finishedAt: string | null;
@@ -33,6 +40,7 @@ export type SessionRecord = {
   repoName: string;
   sourceHead: string;
   sourceBranch: string;
+  sourceRemoteUrl: string | null;
   baseline: string | null;
   createdAt: string;
   updatedAt: string;
@@ -44,9 +52,12 @@ export type SubmitJobRequest = {
   repoName?: string;
   sourceHead?: string;
   sourceBranch?: string;
+  sourceRemoteUrl?: string | null;
   prompt: string;
   model: string;
   thinking?: ThinkingLevel | undefined;
+  deliveryMode?: DeliveryMode;
+  branchName?: string;
   bundleBase64?: string;
   diff?: string;
   warning?: string;

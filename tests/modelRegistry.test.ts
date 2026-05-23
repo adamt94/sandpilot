@@ -3,9 +3,11 @@ import { createDefaultClientConfig } from "../src/shared/config";
 import {
   DEFAULT_MODEL_PROVIDER,
   getAllModels,
+  getAllThinkingLevels,
   getDefaultModel,
   getModelProvider,
   getProviderModels,
+  getProviderThinkingLevels,
   MODEL_REGISTRY,
 } from "../src/shared/models";
 
@@ -16,12 +18,16 @@ describe("model registry", () => {
 
   test("exposes provider lists through the central registry", () => {
     expect(getProviderModels(DEFAULT_MODEL_PROVIDER)).toEqual(MODEL_REGISTRY.providers[DEFAULT_MODEL_PROVIDER]?.models);
+    expect(getProviderThinkingLevels(DEFAULT_MODEL_PROVIDER)).toEqual(
+      MODEL_REGISTRY.providers[DEFAULT_MODEL_PROVIDER]?.thinkingLevels,
+    );
     expect(getAllModels()).toContain(getDefaultModel());
     expect(getAllModels()).toContain(MODEL_REGISTRY.providers.anthropic?.defaultModel);
+    expect(getAllThinkingLevels()).toContain("xhigh");
   });
 
   test("maps registered models back to their provider", () => {
-    expect(getModelProvider("claude-sonnet-4-5")).toBe("anthropic");
+    expect(getModelProvider("claude-sonnet-4-6")).toBe("anthropic");
     expect(getModelProvider("gpt-4o")).toBe("openai");
   });
 });

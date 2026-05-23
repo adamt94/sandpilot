@@ -14,6 +14,10 @@ export async function packageRepo(input: {
   const sourceBranch = (
     await runCommand(["git", "rev-parse", "--abbrev-ref", "HEAD"], { cwd: root })
   ).stdout.trim();
+  let sourceRemoteUrl: string | null = null;
+  try {
+    sourceRemoteUrl = (await runCommand(["git", "remote", "get-url", "origin"], { cwd: root })).stdout.trim() || null;
+  } catch {}
 
   const tempDir = mkdtempSync(join(tmpdir(), "sandpilot-client-"));
   const bundlePath = join(tempDir, "repo.bundle");
@@ -34,6 +38,7 @@ export async function packageRepo(input: {
     repoName: basename(root),
     sourceHead,
     sourceBranch,
+    sourceRemoteUrl,
     prompt: input.prompt,
     model: input.model,
     bundleBase64: readFileSync(bundlePath).toString("base64"),

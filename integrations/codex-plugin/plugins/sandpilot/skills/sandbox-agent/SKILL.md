@@ -16,13 +16,13 @@ sandpilot-tunnel
 Run a task from a git repo:
 
 ```bash
-sandpilot run "<prompt>" --cwd . --apply --detach
+sandpilot run "<prompt>" --cwd .
 ```
 
 Continue an existing sandbox session:
 
 ```bash
-sandpilot run "<prompt>" --continue <session-id> --apply --detach
+sandpilot run "<prompt>" --continue <session-id>
 ```
 
 Inspect results:

@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 export type ProviderModelConfig = {
   defaultModel: string;
+  thinkingLevels: string[];
   models: string[];
 };
 
@@ -27,8 +28,16 @@ export function getProviderModels(provider: string): readonly string[] {
   return getProviderConfig(provider).models;
 }
 
+export function getProviderThinkingLevels(provider: string): readonly string[] {
+  return getProviderConfig(provider).thinkingLevels;
+}
+
 export function getDefaultModel(provider: string = DEFAULT_MODEL_PROVIDER): string {
   return getProviderConfig(provider).defaultModel;
+}
+
+export function getProviderNames(): string[] {
+  return Object.keys(MODEL_REGISTRY.providers);
 }
 
 export function getAllModels(): string[] {
@@ -40,4 +49,13 @@ export function getModelProvider(model: string): string | null {
     if (config.models.includes(model)) return provider;
   }
   return null;
+}
+
+export function getModelThinkingLevels(model: string): readonly string[] {
+  const provider = getModelProvider(model);
+  return provider ? getProviderThinkingLevels(provider) : [];
+}
+
+export function getAllThinkingLevels(): string[] {
+  return [...new Set(Object.values(MODEL_REGISTRY.providers).flatMap((entry) => entry.thinkingLevels))];
 }

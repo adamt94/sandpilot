@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { randomBytes } from "node:crypto";
 import type { ClientConfig, DaemonConfig } from "./types";
-import { getAllModels, getDefaultModel } from "./models";
+import { getAllModels, getDefaultModel, getModelThinkingLevels } from "./models";
 
 const appDir = join(homedir(), ".sandpilot");
 
@@ -80,10 +80,18 @@ export function loadClientConfig(): ClientConfig {
   const migratedModel = knownModels.includes(existing.defaultModel)
     ? existing.defaultModel
     : getDefaultModel();
-
   // fill in any fields added after initial setup (e.g. defaultThinking)
   const defaults = createDefaultClientConfig(daemon);
-  const merged: ClientConfig = { ...defaults, ...existing, defaultModel: migratedModel };
+  const candidateThinking = existing.defaultThinking ?? defaults.defaultThinking;
+  const migratedThinking = candidateThinking && getModelThinkingLevels(migratedModel).includes(candidateThinking)
+    ? candidateThinking
+    : undefined;
+  const merged: ClientConfig = {
+    ...defaults,
+    ...existing,
+    defaultModel: migratedModel,
+    defaultThinking: migratedThinking,
+  };
 
   if (JSON.stringify(merged) !== JSON.stringify(existing)) {
     writeJson(path, merged);

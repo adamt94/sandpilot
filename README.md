@@ -101,6 +101,11 @@ This starts the tunnel, checks the daemon, and applies any patches you missed wh
 sandpilot run "your task here" --cwd . --apply --detach
 ```
 
+**Push the result to a branch instead of applying locally:**
+```bash
+sandpilot run "your task here" --cwd . --branch --detach
+```
+
 **From Claude Code:**
 ```
 /sandbox your task here
@@ -124,7 +129,7 @@ sandpilot logs <job-id>     # View logs
 sandpilot dashboard
 ```
 
-Opens a live view in your browser showing active jobs, history, stats, and logs. Auto-refreshes every 5 seconds.
+Opens a live view in your browser showing active jobs, history, stats, logs, source branches, and pushed result branches. Completed jobs that have not been applied show an apply button.
 
 To access from another machine over Tailscale, find your token in `~/.sandpilot/client.json` and open:
 ```
@@ -155,6 +160,12 @@ sandpilot run "your task" --cwd . --model claude-opus-4-7 --apply --detach
 
 Available models: `claude-opus-4-7`, `claude-sonnet-4-6`, `claude-haiku-4-5`
 
+List all configured models and provider-specific thinking levels:
+
+```bash
+sandpilot models
+```
+
 </details>
 
 <details>
@@ -175,6 +186,12 @@ Apply a completed patch manually:
 
 ```bash
 sandpilot apply <job-id>
+```
+
+Create and push a branch for an existing completed job:
+
+```bash
+sandpilot branch <job-id>
 ```
 
 Useful when `--apply` wasn't used or you want to review before applying.

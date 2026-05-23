@@ -23,13 +23,13 @@ Submit the current repository and prompt to the Sandpilot Mac mini Docker sandbo
 3. Submit the job from the current git repository:
 
    ```bash
-   sandpilot run "$ARGUMENTS" --cwd . --apply --detach
+   sandpilot run "$ARGUMENTS" --cwd .
    ```
 
 4. To continue an existing sandbox session instead of starting fresh:
 
    ```bash
-   sandpilot run "$ARGUMENTS" --continue <session-id> --apply --detach
+   sandpilot run "$ARGUMENTS" --continue <session-id>
    ```
 
 5. Default behavior is fire-and-forget. After `sandpilot run` returns, report only the submitted job id, session id, that auto-apply is running in the background, and that the user can review later with `git diff`. Then stop.

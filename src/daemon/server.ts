@@ -9,6 +9,7 @@ import { runClaudeOnHost } from "../runner/claudeHostRunner";
 import { getModelProvider } from "../shared/models";
 import { runCommand } from "../shared/shell";
 import { dashboardHtml } from "./dashboard";
+import { applyPatchText, defaultResultBranch } from "../git/applyResult";
 
 const USAGE_LIMIT_PATTERNS = [
   /usage.?limit/i,
@@ -70,6 +71,8 @@ export class SandpilotDaemon {
         if (request.method === "GET" && parts[3] === "events") return this.getEvents(jobId, url);
         if (request.method === "GET" && parts[3] === "logs") return this.getLogs(jobId);
         if (request.method === "GET" && parts[3] === "patch") return this.getPatch(jobId);
+        if (request.method === "POST" && parts[3] === "result") return this.markResult(jobId, request);
+        if (request.method === "POST" && parts[3] === "apply") return this.apply(jobId);
         if (request.method === "POST" && parts[3] === "cancel") return this.cancel(jobId);
       }
 
@@ -107,8 +110,11 @@ export class SandpilotDaemon {
         repoName: session.repoName,
         sourceHead: session.sourceHead,
         sourceBranch: session.sourceBranch,
+        sourceRemoteUrl: session.sourceRemoteUrl,
         model: body.model,
         thinking: body.thinking ?? null,
+        deliveryMode: body.deliveryMode ?? "patch",
+        requestedBranchName: body.branchName ?? null,
         prompt: body.prompt,
         warning: null,
         clientCwd: body.clientCwd ?? null,
@@ -124,6 +130,7 @@ export class SandpilotDaemon {
         repoName: body.repoName,
         sourceHead: body.sourceHead,
         sourceBranch: body.sourceBranch,
+        sourceRemoteUrl: body.sourceRemoteUrl ?? null,
       });
 
       const bundlePath = join(jobDir, "repo.bundle");
@@ -137,8 +144,11 @@ export class SandpilotDaemon {
         repoName: body.repoName,
         sourceHead: body.sourceHead,
         sourceBranch: body.sourceBranch,
+        sourceRemoteUrl: body.sourceRemoteUrl ?? null,
         model: body.model,
         thinking: body.thinking ?? null,
+        deliveryMode: body.deliveryMode ?? "patch",
+        requestedBranchName: body.branchName ?? null,
         prompt: body.prompt,
         warning: body.warning ?? null,
         clientCwd: body.clientCwd ?? null,
@@ -180,6 +190,44 @@ export class SandpilotDaemon {
 
   private dashboard(): Response {
     return new Response(dashboardHtml(), { headers: { "content-type": "text/html;charset=utf-8" } });
+  }
+
+  private async markResult(jobId: string, request: Request): Promise<Response> {
+    const job = this.store.getJob(jobId);
+    if (!job) return text("job not found", 404);
+    const body = await request.json().catch(() => ({})) as { branch?: string | null; appliedAt?: string | null; error?: string | null };
+    const updated = this.store.markResult(jobId, {
+      branch: body.branch ?? null,
+      appliedAt: body.appliedAt ?? null,
+      error: body.error ?? null,
+    });
+    if (body.branch) this.store.addEvent(jobId, "info", `Result branch: ${body.branch}`);
+    if (body.appliedAt) this.store.addEvent(jobId, "info", `Result applied at ${body.appliedAt}`);
+    if (body.error) this.store.addEvent(jobId, "error", body.error);
+    return json({ job: updated });
+  }
+
+  private async apply(jobId: string): Promise<Response> {
+    const job = this.store.getJob(jobId);
+    if (!job) return text("job not found", 404);
+    if (job.status !== "succeeded") return text(`cannot apply job in status ${job.status}`, 409);
+    if (!job.clientCwd) return text("job has no client cwd recorded", 409);
+    const artifact = this.store.getArtifact(jobId, "patch");
+    if (!artifact) return text("patch not ready", 404);
+
+    try {
+      const messages = await applyPatchText(readFileSync(artifact.path, "utf8"), job.clientCwd);
+      for (const message of messages) this.store.addEvent(jobId, "info", message);
+      const appliedAt = new Date().toISOString();
+      const updated = this.store.markResult(jobId, { appliedAt, error: null });
+      this.store.addEvent(jobId, "info", `Applied to ${job.clientCwd}`);
+      return json({ job: updated });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.store.markResult(jobId, { error: message });
+      this.store.addEvent(jobId, "error", message);
+      return text(message, 500);
+    }
   }
 
   private cancel(jobId: string): Response {
@@ -265,16 +313,40 @@ export class SandpilotDaemon {
       }
 
       await writePatchAndSummary({ runner, store: this.store, baseline, exitCode });
+      if (exitCode === 0 && job.deliveryMode === "branch") {
+        await this.pushResultBranch(runner.repoDir, job);
+      }
       this.store.setStatus(job.id, exitCode === 0 ? "succeeded" : "failed", exitCode);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.store.addEvent(job.id, "error", message);
+      this.store.markResult(job.id, { error: message });
       if (controller.signal.aborted) this.store.setStatus(job.id, "cancelled");
       else this.store.setStatus(job.id, "failed", 1);
     } finally {
       this.running.delete(job.id);
       this.processQueue();
     }
+  }
+
+  private async pushResultBranch(repoDir: string, job: JobRecord): Promise<void> {
+    if (!job.sourceRemoteUrl) throw new Error("branch mode requires an origin remote URL");
+    const branchName = job.requestedBranchName ?? defaultResultBranch(job.repoName, job.id);
+    this.store.addEvent(job.id, "info", `Pushing result branch ${branchName}`);
+    await runCommand(["git", "switch", "-C", branchName], { cwd: repoDir });
+    const remotes = (await runCommand(["git", "remote"], { cwd: repoDir })).stdout.split("\n").filter(Boolean);
+    if (remotes.includes("sandpilot-source")) {
+      await runCommand(["git", "remote", "set-url", "sandpilot-source", job.sourceRemoteUrl], { cwd: repoDir });
+    } else {
+      await runCommand(["git", "remote", "add", "sandpilot-source", job.sourceRemoteUrl], { cwd: repoDir });
+    }
+    await runCommand(["git", "push", "-u", "sandpilot-source", branchName], { cwd: repoDir });
+    this.store.markResult(job.id, {
+      branch: branchName,
+      appliedAt: new Date().toISOString(),
+      error: null,
+    });
+    this.store.addEvent(job.id, "info", `Result branch pushed: ${branchName}`);
   }
 }
 

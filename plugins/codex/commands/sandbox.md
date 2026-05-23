@@ -27,13 +27,13 @@ ssh -N -L 7349:127.0.0.1:7349 mac-mini
 Execute:
 
 ```bash
-sandpilot run "$ARGUMENTS" --cwd . --apply --detach
+sandpilot run "$ARGUMENTS" --cwd .
 ```
 
 If `sandpilot` is not on PATH, execute:
 
 ```bash
-bun run /Users/adamthompson/Documents/Dev/github/sandpilot/src/cli/index.ts run "$ARGUMENTS" --cwd . --apply --detach
+bun run /Users/adamthompson/Documents/Dev/github/sandpilot/src/cli/index.ts run "$ARGUMENTS" --cwd .
 ```
 
 ## Response

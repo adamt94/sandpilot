@@ -3,10 +3,12 @@
   "providers": {
     "anthropic": {
       "defaultModel": "claude-sonnet-4-6",
+      "thinkingLevels": ["low", "medium", "high"],
       "models": ["claude-sonnet-4-6", "claude-opus-4-7", "claude-haiku-4-5"]
     },
     "openai": {
       "defaultModel": "gpt-5.5",
+      "thinkingLevels": ["low", "medium", "high", "xhigh"],
       "models": [
         "gpt-5.5",
         "gpt-5.5-pro",

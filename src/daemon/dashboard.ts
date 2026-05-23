@@ -45,6 +45,9 @@ section{padding:20px 24px}
 .active-card .prompt-preview{color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .btn-cancel{background:none;border:1px solid var(--border);color:var(--muted);border-radius:4px;padding:4px 10px;cursor:pointer;font-family:inherit;font-size:11px;flex-shrink:0}
 .btn-cancel:hover{border-color:var(--red);color:var(--red)}
+.btn-apply{background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:4px 10px;cursor:pointer;font-family:inherit;font-size:11px;white-space:nowrap}
+.btn-apply:hover{border-color:var(--green);color:var(--green)}
+.btn-apply[disabled]{cursor:not-allowed;opacity:.45}
 table{width:100%;border-collapse:collapse}
 thead th{text-align:left;padding:8px 10px;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.8px;border-bottom:1px solid var(--border);font-weight:400}
 tbody tr.job-row{cursor:pointer}
@@ -189,7 +192,7 @@ function renderMain() {
     html += '<div class="empty">no completed jobs yet</div>';
   } else {
     html += '<table><thead><tr>';
-    html += '<th></th><th>job</th><th>repo</th><th>model</th><th>prompt</th><th>duration</th><th>finished</th><th></th>';
+    html += '<th></th><th>job</th><th>repo</th><th>model</th><th>prompt</th><th>result</th><th>duration</th><th>finished</th><th></th>';
     html += '</tr></thead><tbody>';
     for (const j of history) html += jobRow(j);
     html += '</tbody></table>';
@@ -228,6 +231,7 @@ function jobRow(j) {
     '<td><span class="tag">' + esc(j.repoName) + '</span></td>' +
     '<td class="model-text">' + modelLabel(j.model, j.thinking) + '</td>' +
     '<td class="prompt-cell">' + esc(j.prompt) + '</td>' +
+    '<td>' + resultCell(j) + '</td>' +
     '<td class="duration-text">' + dur + '</td>' +
     '<td class="age-text">' + (j.finishedAt ? relTime(new Date(j.finishedAt)) : '—') + '</td>' +
     '<td><span class="chevron' + (isExpanded ? ' open' : '') + '">›</span></td>' +
@@ -240,15 +244,29 @@ function jobRow(j) {
     ? events.map(e => '<div class="ev-' + e.type + '">[' + e.type + '] ' + esc(e.payload) + '</div>').join('')
     : '<div style="color:var(--muted)">no events</div>';
 
-  return rows + '<tr class="expanded-row"><td colspan="8"><div class="expand-content">' +
+  return rows + '<tr class="expanded-row"><td colspan="9"><div class="expand-content">' +
     '<div class="expand-meta">' +
       '<span><b>prompt:</b> ' + esc(j.prompt) + '</span>' +
       (j.sessionId ? '<span><b>session:</b> ' + j.sessionId + '</span>' : '') +
+      '<span><b>source branch:</b> ' + esc(j.sourceBranch) + '</span>' +
+      (j.resultBranch ? '<span><b>result branch:</b> ' + esc(j.resultBranch) + '</span>' : '') +
+      (j.resultAppliedAt ? '<span><b>applied:</b> ' + esc(j.resultAppliedAt) + '</span>' : '') +
+      (j.resultError ? '<span style="color:var(--red)"><b>error:</b> ' + esc(j.resultError) + '</span>' : '') +
       (j.clientCwd ? '<span><b>cwd:</b> ' + esc(j.clientCwd) + '</span>' : '') +
       (j.warning ? '<span style="color:var(--yellow)"><b>⚠</b> ' + esc(j.warning) + '</span>' : '') +
     '</div>' +
     '<div class="events-box">' + evHtml + '</div>' +
   '</div></td></tr>';
+}
+
+function resultCell(j) {
+  if (j.resultBranch) return '<span class="tag">' + esc(j.resultBranch) + '</span>';
+  if (j.resultAppliedAt) return '<span class="tag">applied</span>';
+  if (j.status === 'succeeded') {
+    const disabled = j.clientCwd ? '' : ' disabled title="no checkout path recorded"';
+    return '<button class="btn-apply" data-apply="' + j.id + '"' + disabled + '>apply</button>';
+  }
+  return '<span class="age-text">—</span>';
 }
 
 function attachListeners() {
@@ -273,6 +291,26 @@ function attachListeners() {
         });
         await refresh();
       } catch(err) { showError(err.message); }
+    });
+  }
+  for (const btn of document.querySelectorAll('[data-apply]')) {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      const id = btn.dataset.apply;
+      btn.disabled = true;
+      btn.textContent = 'applying...';
+      try {
+        const r = await fetch('/v1/jobs/' + id + '/apply', {
+          method: 'POST', body: '{}',
+          headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' }
+        });
+        if (!r.ok) throw new Error(await r.text());
+        await refresh();
+      } catch(err) {
+        showError(err.message);
+        btn.disabled = false;
+        btn.textContent = 'apply';
+      }
     });
   }
   for (const row of document.querySelectorAll('tr.job-row')) {

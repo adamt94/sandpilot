@@ -43,13 +43,13 @@ sandpilot-tunnel
 From the current git repository:
 
 ```bash
-sandpilot run "$ARGUMENTS" --cwd . --apply --detach
+sandpilot run "$ARGUMENTS" --cwd .
 ```
 
 To continue the most recent remote sandbox session instead of starting fresh:
 
 ```bash
-sandpilot run "$ARGUMENTS" --continue <session-id> --apply --detach
+sandpilot run "$ARGUMENTS" --continue <session-id>
 ```
 
 ## Laptop was off / watcher died

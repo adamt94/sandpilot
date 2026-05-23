@@ -1,16 +1,27 @@
 #!/usr/bin/env bun
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SandpilotDaemon } from "../daemon/server";
 import { parseRunArgs } from "./runArgs";
+import { applyPatchText, createBranchCommitAndPush, defaultResultBranch } from "../git/applyResult";
 import { packageRepo } from "../git/packageRepo";
 import { loadClientConfig, loadDaemonConfig, saveClientConfig } from "../shared/config";
 import { apiFetch } from "../shared/http";
-import { getAllModels, getDefaultModel, getModelProvider } from "../shared/models";
+import {
+  getAllModels,
+  getAllThinkingLevels,
+  getDefaultModel,
+  getModelProvider,
+  getModelThinkingLevels,
+  getProviderModels,
+  getProviderNames,
+  getProviderThinkingLevels,
+  MODEL_REGISTRY,
+} from "../shared/models";
 import { commandExists, runCommand } from "../shared/shell";
-import type { JobEvent, JobRecord, SubmitJobRequest, SubmitJobResponse } from "../shared/types";
+import type { JobEvent, JobRecord, SubmitJobRequest, SubmitJobResponse, ThinkingLevel } from "../shared/types";
 
 const args = process.argv.slice(2);
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -59,11 +70,14 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === "models") return models();
   if (command === "watch-apply" && subcommand) return watchApply(subcommand, rest);
+  if (command === "watch-branch" && subcommand) return watchBranch(subcommand, rest);
   if (command === "status" && subcommand) return status(subcommand);
   if (command === "logs" && subcommand) return logs(subcommand);
   if (command === "patch" && subcommand) return patch(subcommand);
-  if (command === "apply" && subcommand) return apply(subcommand);
+  if (command === "apply" && subcommand) return apply(subcommand, rest);
+  if (command === "branch" && subcommand) return branch(subcommand, rest);
   if (command === "cancel" && subcommand) return cancel(subcommand);
   if (command === "list") return list();
   if (command === "pending") return pending(rest);
@@ -84,12 +98,18 @@ async function main(): Promise<void> {
 async function run(inputArgs: string[]): Promise<void> {
   const options = parseRunArgs(inputArgs);
   const config = loadClientConfig();
+  const model = options.model ?? config.defaultModel;
   const thinking = options.thinking ?? config.defaultThinking ?? null;
+  if (thinking && !getModelThinkingLevels(model).includes(thinking)) {
+    throw new Error(`thinking level ${thinking} is not available for ${model}; available: ${getModelThinkingLevels(model).join(", ")}`);
+  }
   const request: SubmitJobRequest = options.continueSession
     ? {
         prompt: options.prompt,
-        model: options.model ?? config.defaultModel,
+        model,
         thinking: thinking ?? undefined,
+        deliveryMode: options.branch ? "branch" : "patch",
+        ...(options.branchName ? { branchName: options.branchName } : {}),
         sessionMode: "continue",
         sessionId: options.continueSession,
         clientCwd: resolve(options.cwd),
@@ -98,10 +118,16 @@ async function run(inputArgs: string[]): Promise<void> {
         ...await packageRepo({
           cwd: options.cwd,
           prompt: options.prompt,
-          model: options.model ?? config.defaultModel,
+          model,
         }),
         thinking: thinking ?? undefined,
+        deliveryMode: options.branch ? "branch" : "patch",
+        ...(options.branchName ? { branchName: options.branchName } : {}),
       };
+
+  if (options.branch && !options.continueSession && !request.sourceRemoteUrl) {
+    throw new Error("--branch requires an origin remote so the daemon can push the result branch");
+  }
 
   if (request.warning) console.warn(`warning: ${request.warning}`);
   const response = await apiFetch<SubmitJobResponse>(config, "/v1/jobs", {
@@ -115,6 +141,21 @@ async function run(inputArgs: string[]): Promise<void> {
 
   if (options.stream) {
     await streamJob(response.job.id);
+  } else if (options.branch) {
+    if (options.detach) {
+      console.log(`branch push will run on the daemon`);
+      console.log(`progress: sandpilot status ${response.job.id}`);
+      return;
+    }
+    const job = await waitForJob(response.job.id);
+    console.log(`job ${job.status}`);
+    if (job.status !== "succeeded") {
+      console.log(`logs: sandpilot logs ${response.job.id}`);
+      process.exitCode = 1;
+      return;
+    }
+    const finalJob = (await apiFetch<{ job: JobRecord }>(config, `/v1/jobs/${response.job.id}`)).job;
+    if (finalJob.resultBranch) console.log(`pushed branch ${finalJob.resultBranch}`);
   } else if (options.apply) {
     if (options.detach) {
       const logPath = startApplyWatcher(response.job.id, options.cwd);
@@ -170,6 +211,9 @@ async function status(jobId: string): Promise<void> {
   console.log(`branch: ${job.sourceBranch}`);
   console.log(`head: ${job.sourceHead}`);
   console.log(`model: ${job.model}`);
+  if (job.resultBranch) console.log(`result branch: ${job.resultBranch}`);
+  if (job.resultAppliedAt) console.log(`result applied: ${job.resultAppliedAt}`);
+  if (job.resultError) console.log(`result error: ${job.resultError}`);
   if (job.warning) console.log(`warning: ${job.warning}`);
   if (job.exitCode !== null) console.log(`exit: ${job.exitCode}`);
 }
@@ -182,14 +226,22 @@ async function patch(jobId: string): Promise<void> {
   console.log(await fetchText(`/v1/jobs/${jobId}/patch`));
 }
 
-async function apply(jobId: string): Promise<void> {
-  await applyPatch(jobId, process.cwd());
+async function apply(jobId: string, inputArgs: string[]): Promise<void> {
+  const { cwd } = parseLocalResultFlags(inputArgs);
+  await applyPatch(jobId, cwd);
+  await reportJobResult(jobId, { appliedAt: new Date().toISOString(), error: null });
   markApplied(jobId);
   console.log(`applied ${jobId}`);
 }
 
+async function branch(jobId: string, inputArgs: string[]): Promise<void> {
+  const { cwd, branchName } = parseLocalResultFlags(inputArgs);
+  const pushedBranch = await createResultBranch(jobId, cwd, branchName);
+  console.log(`pushed branch ${pushedBranch}`);
+}
+
 async function watchApply(jobId: string, inputArgs: string[]): Promise<void> {
-  const cwd = parseCwdFlag(inputArgs);
+  const { cwd } = parseLocalResultFlags(inputArgs);
   console.log(`watching ${jobId}`);
   const job = await waitForJob(jobId);
   console.log(`job ${job.status}`);
@@ -199,35 +251,60 @@ async function watchApply(jobId: string, inputArgs: string[]): Promise<void> {
     process.exitCode = 1;
     return;
   }
-  await applyPatch(jobId, cwd);
-  markApplied(jobId);
-  console.log(`applied ${jobId}`);
-  await notifyMacOS("Sandpilot patch ready", `${job.repoName} — review with: git diff`);
+  try {
+    await applyPatch(jobId, cwd);
+    await reportJobResult(jobId, { appliedAt: new Date().toISOString(), error: null });
+    markApplied(jobId);
+    console.log(`applied ${jobId}`);
+    await notifyMacOS("Sandpilot patch ready", `${job.repoName} - review with: git diff`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await reportJobResult(jobId, { error: message });
+    throw error;
+  }
+}
+
+async function watchBranch(jobId: string, inputArgs: string[]): Promise<void> {
+  const { cwd, branchName } = parseLocalResultFlags(inputArgs);
+  console.log(`watching ${jobId}`);
+  const job = await waitForJob(jobId);
+  console.log(`job ${job.status}`);
+  if (job.status !== "succeeded") {
+    console.log(`logs: sandpilot logs ${jobId}`);
+    await notifyMacOS("Sandpilot", `Job ${jobId.slice(0, 16)} failed - run: sandpilot logs ${jobId}`);
+    process.exitCode = 1;
+    return;
+  }
+  try {
+    const pushedBranch = await createResultBranch(jobId, cwd, branchName, job);
+    console.log(`pushed branch ${pushedBranch}`);
+    await notifyMacOS("Sandpilot branch ready", `${job.repoName} - ${pushedBranch}`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await reportJobResult(jobId, { error: message });
+    throw error;
+  }
 }
 
 async function applyPatch(jobId: string, cwd: string): Promise<void> {
   const patchText = await fetchText(`/v1/jobs/${jobId}/patch`);
-  if (!patchText.trim()) {
-    console.log(`no patch to apply for ${jobId}`);
-    return;
-  }
-  const tempDir = mkdtempSync(join(tmpdir(), "sandpilot-apply-"));
-  const patchPath = join(tempDir, "result.patch");
-  writeFileSync(patchPath, patchText);
-  try {
-    await runCommand(["git", "apply", "--whitespace=nowarn", patchPath], { cwd });
-    return;
-  } catch {}
+  for (const message of await applyPatchText(patchText, cwd)) console.log(message);
+}
 
-  try {
-    console.log("clean apply failed, retrying with fuzzy context matching...");
-    await runCommand(["patch", "--fuzz=3", "-p1", "-i", patchPath], { cwd });
-    return;
-  } catch {}
-
-  console.log("fuzzy apply failed, applying with --reject (check *.rej files for conflicts)...");
-  await runCommand(["git", "apply", "--whitespace=nowarn", "--reject", patchPath], { cwd, okExitCodes: [0, 1] });
-  console.log("partial apply done — search for *.rej files to see what needs manual merging");
+async function createResultBranch(jobId: string, cwd: string, branchName: string | null, job?: JobRecord): Promise<string> {
+  const currentJob = job ?? (await apiFetch<{ job: JobRecord }>(loadClientConfig(), `/v1/jobs/${jobId}`)).job;
+  const patchText = await fetchText(`/v1/jobs/${jobId}/patch`);
+  const resultBranch = branchName ?? defaultResultBranch(currentJob.repoName, jobId);
+  const messages = await createBranchCommitAndPush({
+    patchText,
+    cwd,
+    branchName: resultBranch,
+    message: `Sandpilot result ${jobId}`,
+  });
+  for (const message of messages) console.log(message);
+  await reportJobResult(jobId, { branch: resultBranch, appliedAt: new Date().toISOString(), error: null });
+  markApplied(jobId);
+  return resultBranch;
 }
 
 function appliedMarkerPath(jobId: string): string {
@@ -242,6 +319,22 @@ function markApplied(jobId: string): void {
 
 function isApplied(jobId: string): boolean {
   return existsSync(appliedMarkerPath(jobId));
+}
+
+async function reportJobResult(
+  jobId: string,
+  result: { branch?: string | null; appliedAt?: string | null; error?: string | null },
+): Promise<void> {
+  try {
+    const config = loadClientConfig();
+    await apiFetch(config, `/v1/jobs/${jobId}/result`, {
+      method: "POST",
+      body: JSON.stringify(result),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`warning: could not update job result: ${message}`);
+  }
 }
 
 async function notifyMacOS(title: string, message: string): Promise<void> {
@@ -262,7 +355,7 @@ async function pending(inputArgs: string[]): Promise<void> {
   const config = loadClientConfig();
   const response = await apiFetch<{ jobs: JobRecord[] }>(config, "/v1/jobs");
   const unapplied = response.jobs.filter(
-    (job) => job.status === "succeeded" && !isApplied(job.id),
+    (job) => job.status === "succeeded" && !job.resultAppliedAt && !job.resultBranch && !isApplied(job.id),
   );
 
   if (unapplied.length === 0) {
@@ -279,6 +372,7 @@ async function pending(inputArgs: string[]): Promise<void> {
         continue;
       }
       await applyPatch(job.id, cwd);
+      await reportJobResult(job.id, { appliedAt: new Date().toISOString(), error: null });
       markApplied(job.id);
       console.log(`applied ${job.id}`);
     }
@@ -338,20 +432,27 @@ async function setModel(model: string): Promise<void> {
   }
   const config = loadClientConfig();
   config.defaultModel = model;
+  clearIncompatibleThinking(config, model);
   saveClientConfig(config);
   console.log(`default model set to ${model}`);
 }
 
 async function setThinking(level: string): Promise<void> {
-  const valid = ["low", "medium", "high", "max", "off"];
+  const valid = [...getAllThinkingLevels(), "off"];
   if (!valid.includes(level)) {
     console.error(`unknown thinking level: ${level}`);
-    console.error(`available: low, medium, high, off`);
+    console.error(`available: ${valid.join(", ")}`);
     process.exitCode = 1;
     return;
   }
   const config = loadClientConfig();
-  config.defaultThinking = level === "off" ? undefined : (level as "low" | "medium" | "high");
+  if (level !== "off" && !getModelThinkingLevels(config.defaultModel).includes(level)) {
+    console.error(`thinking level ${level} is not available for current default model ${config.defaultModel}`);
+    console.error(`available for ${config.defaultModel}: ${getModelThinkingLevels(config.defaultModel).join(", ")}`);
+    process.exitCode = 1;
+    return;
+  }
+  config.defaultThinking = level === "off" ? undefined : (level as ThinkingLevel);
   saveClientConfig(config);
   console.log(level === "off" ? "thinking disabled by default" : `default thinking set to ${level}`);
 }
@@ -370,9 +471,17 @@ async function setRunner(runner: string): Promise<void> {
   }
   const config = loadClientConfig();
   config.defaultModel = model;
+  clearIncompatibleThinking(config, model);
   saveClientConfig(config);
   console.log(`default runner set to ${runner} (model: ${model})`);
   console.log(`change model: sandpilot set model <model>`);
+}
+
+function clearIncompatibleThinking(config: ReturnType<typeof loadClientConfig>, model: string): void {
+  if (config.defaultThinking && !getModelThinkingLevels(model).includes(config.defaultThinking)) {
+    console.log(`clearing default thinking ${config.defaultThinking}; not available for ${model}`);
+    config.defaultThinking = undefined;
+  }
 }
 
 async function setupWakeAgent(): Promise<void> {
@@ -431,8 +540,9 @@ function startApplyWatcher(jobId: string, cwd: string): string {
   return logPath;
 }
 
-function parseCwdFlag(inputArgs: string[]): string {
+function parseLocalResultFlags(inputArgs: string[]): { cwd: string; branchName: string | null } {
   let cwd = process.cwd();
+  let branchName: string | null = null;
   for (let index = 0; index < inputArgs.length; index += 1) {
     const value = inputArgs[index];
     if (value === "--cwd" || value === "-C") {
@@ -440,9 +550,14 @@ function parseCwdFlag(inputArgs: string[]): string {
       if (!next) throw new Error(`${value} requires a directory`);
       cwd = resolve(next);
       index += 1;
+    } else if (value === "--branch-name") {
+      const next = inputArgs[index + 1];
+      if (!next) throw new Error(`${value} requires a branch name`);
+      branchName = next;
+      index += 1;
     }
   }
-  return cwd;
+  return { cwd, branchName };
 }
 
 async function cancel(jobId: string): Promise<void> {
@@ -464,6 +579,31 @@ async function list(): Promise<void> {
   for (const job of response.jobs) {
     const created = new Date(job.createdAt).toLocaleString();
     console.log(`${col(job.id, 36)}  ${col(job.status, 12)}  ${col(job.repoName ?? "-", 24)}  ${created}`);
+  }
+}
+
+async function models(): Promise<void> {
+  const config = loadClientConfig();
+  console.log(`default model: ${config.defaultModel}`);
+  console.log(`default thinking: ${config.defaultThinking ?? "off"}`);
+  console.log("");
+
+  for (const provider of getProviderNames()) {
+    const providerConfig = MODEL_REGISTRY.providers[provider];
+    if (!providerConfig) continue;
+    const runner = provider === "anthropic" ? "claude" : provider === "openai" ? "codex" : provider;
+    console.log(`${runner} (${provider})`);
+    console.log(`  default: ${providerConfig.defaultModel}`);
+    console.log(`  thinking: ${getProviderThinkingLevels(provider).join(", ")}`);
+    console.log(`  models:`);
+    for (const model of getProviderModels(provider)) {
+      const markers = [
+        model === providerConfig.defaultModel ? "provider default" : null,
+        model === config.defaultModel ? "current default" : null,
+      ].filter(Boolean);
+      console.log(`    ${model}${markers.length ? ` (${markers.join(", ")})` : ""}`);
+    }
+    console.log("");
   }
 }
 
@@ -670,12 +810,14 @@ Usage:
   sandpilot daemon sandbox-doctor
   sandpilot setup agents
   sandpilot doctor agents
-  sandpilot run "prompt" [--cwd .] [--model ${defaultModel}] [--stream] [--apply] [--detach] [--new-session]
-  sandpilot run "prompt" --continue <session-id> [--model ${defaultModel}] [--stream] [--apply] [--detach]
+  sandpilot models
+  sandpilot run "prompt" [--cwd .] [--model ${defaultModel}] [--stream] [--apply|--branch] [--detach] [--branch-name name] [--new-session]
+  sandpilot run "prompt" --continue <session-id> [--model ${defaultModel}] [--stream] [--apply|--branch] [--detach] [--branch-name name]
   sandpilot status <job-id>
   sandpilot logs <job-id>
   sandpilot patch <job-id>
-  sandpilot apply <job-id>
+  sandpilot apply <job-id> [--cwd .]
+  sandpilot branch <job-id> [--cwd .] [--branch-name name]
   sandpilot cancel <job-id>
   sandpilot list
   sandpilot tunnel [--detach] [--stop]
@@ -685,7 +827,7 @@ Usage:
   sandpilot update
   sandpilot set runner <claude|codex>
   sandpilot set model <model>
-  sandpilot set thinking <low|medium|high|off>
+  sandpilot set thinking <level|off>
   sandpilot setup wake-agent
 `);
 }
