@@ -55,15 +55,15 @@ Agent commands do not change after this. They still talk to `http://127.0.0.1:73
 sandpilot run "your task" --cwd . --apply --detach
 ```
 
-## If You Re-run Bootstrap Remotely
+## If You Re-run Setup Remotely
 
-Run bootstrap with the Tailnet target instead of the LAN `.local` target:
+Run setup with the Tailnet target instead of the LAN `.local` target:
 
 ```bash
-scripts/bootstrap.sh nova@<mac-mini-tailnet-name-or-100.x-ip>
+bun run src/cli/index.ts setup nova@<mac-mini-tailnet-name-or-100.x-ip>
 ```
 
-Bootstrap saves that target into `~/.sandpilot/remote`, so future `sandpilot-tunnel` runs use it automatically.
+Setup saves that target into `~/.sandpilot/remote`, so future `sandpilot-tunnel` runs use it automatically.
 
 ## Why Not Expose The Daemon Publicly?
 

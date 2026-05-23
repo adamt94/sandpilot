@@ -6,9 +6,11 @@
 
 **1. One-time setup** (run from this repo):
 ```bash
-sandpilot setup nova@novas-mac-mini.local
+bun run src/cli/index.ts setup nova@novas-mac-mini.local
 ssh -t nova@novas-mac-mini.local 'claude auth login'
 ```
+
+Use your Mac mini SSH hostname in place of `nova@novas-mac-mini.local`; it is shown here as an example. The setup command installs the local `sandpilot` wrapper, syncs this repo to the Mac mini, installs remote dependencies, and starts the daemon.
 
 **2. Each session** (start tunnel + apply any missed patches):
 ```bash
@@ -53,15 +55,17 @@ brew install node docker
 <details>
 <summary>Step-by-step installation</summary>
 
-### 1. Bootstrap
+### 1. Run Setup
 
 From this repository on your laptop:
 
 ```bash
-scripts/bootstrap.sh nova@novas-mac-mini.local
+bun run src/cli/index.ts setup nova@novas-mac-mini.local
 ```
 
-Replace `nova@novas-mac-mini.local` with your Mac mini's hostname or IP. This installs dependencies on both machines and starts the daemon.
+Replace `nova@novas-mac-mini.local` with your Mac mini's SSH hostname or IP, for example `nova@your-mac-mini.local`. The example format is `user@host`.
+
+This first command is run through Bun because a new install may not have the `sandpilot` CLI wrapper on `PATH` yet. It installs the local wrapper, syncs Sandpilot to the Mac mini, installs remote dependencies, and starts the daemon. After it finishes, use `sandpilot` for the rest of the commands.
 
 ### 2. Authenticate Claude
 

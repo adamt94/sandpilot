@@ -748,7 +748,7 @@ async function start(): Promise<void> {
   } else {
     const remotePath = join(homedir(), ".sandpilot", "remote");
     if (!existsSync(remotePath)) {
-      throw new Error("daemon unreachable and no remote configured — run scripts/bootstrap.sh first");
+      throw new Error("daemon unreachable and no remote configured — run: bun run src/cli/index.ts setup <user@host>");
     }
     const remote = readFileSync(remotePath, "utf8").trim();
     const remoteDir = (process.env.SANDPILOT_REMOTE_DIR ?? "~/sandpilot").replace(/^~/, "$HOME");
@@ -800,7 +800,7 @@ async function tunnel(inputArgs: string[]): Promise<void> {
 async function update(): Promise<void> {
   const remotePath = join(homedir(), ".sandpilot", "remote");
   if (!existsSync(remotePath)) {
-    throw new Error("no remote configured — run scripts/bootstrap.sh <user@host> first");
+    throw new Error("no remote configured — run: bun run src/cli/index.ts setup <user@host>");
   }
   const remote = readFileSync(remotePath, "utf8").trim();
   // rsyncDir uses ~ which the remote shell expands; remoteDir uses $HOME for inline SSH scripts
