@@ -22,7 +22,7 @@ header{display:flex;align-items:center;justify-content:space-between;padding:14p
 .dot.offline{background:var(--red)}
 button.refresh{background:none;border:1px solid var(--border);color:var(--muted);border-radius:5px;padding:3px 10px;cursor:pointer;font-family:inherit;font-size:12px}
 button.refresh:hover{border-color:var(--blue);color:var(--blue)}
-.stats{display:grid;grid-template-columns:repeat(5,1fr);gap:1px;background:var(--border);border-bottom:1px solid var(--border)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1px;background:var(--border);border-bottom:1px solid var(--border)}
 .stat{background:var(--surface);padding:16px 20px}
 .stat-val{font-size:22px;font-weight:600;letter-spacing:-.5px}
 .stat-label{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.8px;margin-top:2px}
@@ -48,29 +48,38 @@ section{padding:20px 24px}
 .btn-apply{background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:4px 10px;cursor:pointer;font-family:inherit;font-size:11px;white-space:nowrap}
 .btn-apply:hover{border-color:var(--green);color:var(--green)}
 .btn-apply[disabled]{cursor:not-allowed;opacity:.45}
-table{width:100%;border-collapse:collapse}
-thead th{text-align:left;padding:8px 10px;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.8px;border-bottom:1px solid var(--border);font-weight:400}
+.table-scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;min-width:700px}
+thead th{text-align:left;padding:8px 10px;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.8px;border-bottom:1px solid var(--border);font-weight:400;white-space:nowrap}
 tbody tr.job-row{cursor:pointer}
 tbody tr.job-row:hover td{background:var(--surface)}
 tbody tr.job-row td{padding:9px 10px;border-bottom:1px solid var(--border);white-space:nowrap;vertical-align:top}
-tbody tr.job-row td.prompt-cell{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px}
+tbody tr.job-row td.prompt-cell{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:300px}
 tr.expanded-row td{background:var(--surface);border-bottom:1px solid var(--border)}
 .expand-content{padding:12px 4px 8px}
 .expand-meta{display:flex;gap:24px;margin-bottom:12px;flex-wrap:wrap}
-.expand-meta span{color:var(--muted);font-size:12px}
+.expand-meta span{color:var(--muted);font-size:12px;word-break:break-word;overflow-wrap:break-word}
 .expand-meta span b{color:var(--text)}
 .events-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
 .events-header span{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em}
 .copy-logs-btn{background:none;border:1px solid var(--border);color:var(--muted);cursor:pointer;padding:2px 8px;border-radius:3px;font-size:11px;transition:color .1s,border-color .1s}
 .copy-logs-btn:hover{color:var(--blue);border-color:var(--blue)}
 .copy-logs-btn.copied{color:var(--green);border-color:var(--green)}
-.events-box{background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:10px 12px;max-height:260px;overflow:auto;font-size:12px;line-height:1.6}
-.events-box div{white-space:nowrap}
-.ev-status{color:var(--blue)}
-.ev-info{color:var(--muted)}
-.ev-stdout{color:var(--text)}
-.ev-stderr{color:var(--yellow)}
-.ev-error{color:var(--red)}
+.events-box{background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:8px 12px;max-height:360px;overflow:auto;font-size:12px;line-height:1.5}
+.ev-row{display:flex;gap:8px;padding:2px 0;align-items:baseline;min-width:0}
+.ev-timestamp{color:var(--muted);font-size:10px;flex-shrink:0;font-variant-numeric:tabular-nums;opacity:.6;min-width:56px}
+.ev-badge{font-size:10px;padding:0 5px;border-radius:3px;flex-shrink:0;font-weight:600;text-transform:uppercase;letter-spacing:.2px;line-height:1.8;min-width:46px;text-align:center}
+.ev-badge.ev-status{background:rgba(88,166,255,.15);color:var(--blue)}
+.ev-badge.ev-info{background:rgba(125,133,144,.12);color:var(--muted)}
+.ev-badge.ev-stdout{background:rgba(230,237,243,.06);color:var(--muted)}
+.ev-badge.ev-stderr{background:rgba(240,136,62,.15);color:var(--orange)}
+.ev-badge.ev-error{background:rgba(248,81,73,.15);color:var(--red)}
+.ev-content{white-space:pre-wrap;word-break:break-word;flex:1;min-width:0}
+.ev-content.ev-status{color:var(--blue)}
+.ev-content.ev-info{color:var(--muted)}
+.ev-content.ev-stdout{color:var(--text)}
+.ev-content.ev-stderr{color:var(--orange)}
+.ev-content.ev-error{color:var(--red)}
 .status-icon{font-size:13px}
 .status-icon.succeeded{color:var(--green)}
 .status-icon.failed{color:var(--red)}
@@ -202,11 +211,11 @@ function renderMain() {
   if (history.length === 0) {
     html += '<div class="empty">no completed jobs yet</div>';
   } else {
-    html += '<table><thead><tr>';
+    html += '<div class="table-scroll"><table><thead><tr>';
     html += '<th></th><th>job</th><th>repo</th><th>model</th><th>prompt</th><th>result</th><th>duration</th><th>finished</th><th></th>';
     html += '</tr></thead><tbody>';
     for (const j of history) html += jobRow(j);
-    html += '</tbody></table>';
+    html += '</tbody></table></div>';
   }
   html += '</section>';
 
@@ -252,7 +261,7 @@ function jobRow(j) {
 
   const events = eventsCache[j.id] || [];
   const evHtml = events.length
-    ? events.map(e => '<div class="ev-' + e.type + '">[' + e.type + '] ' + esc(e.payload) + '</div>').join('')
+    ? events.map(e => renderEvent(e)).join('')
     : '<div style="color:var(--muted)">no events</div>';
 
   return rows + '<tr class="expanded-row"><td colspan="9"><div class="expand-content">' +
@@ -408,6 +417,20 @@ function relTime(ts) {
 
 function esc(s) {
   return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function renderEvent(e) {
+  const ts = e.createdAt ? '<span class="ev-timestamp">' + fmtTime(e.createdAt) + '</span>' : '';
+  return '<div class="ev-row">' +
+    ts +
+    '<span class="ev-badge ev-' + e.type + '">' + e.type + '</span>' +
+    '<span class="ev-content ev-' + e.type + '">' + esc(e.payload) + '</span>' +
+  '</div>';
+}
+
+function fmtTime(iso) {
+  const d = new Date(iso);
+  return d.toTimeString().slice(0, 8);
 }
 
 // tick every second to update elapsed timers and relative times
