@@ -19,9 +19,6 @@ export async function runClaudeOnHost(input: {
 
   // inherit the daemon's full environment so OAuth session tokens are available
   const env: Record<string, string> = { ...(process.env as Record<string, string>) };
-  if (input.config.anthropicApiKey) {
-    env.ANTHROPIC_API_KEY = input.config.anthropicApiKey;
-  }
 
   const effortFlag = input.runner.job.thinking ? ["--effort", input.runner.job.thinking] : [];
 

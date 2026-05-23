@@ -98,7 +98,6 @@ export type DaemonConfig = {
   claudeHome: string;
   codexFallbackModel: string;
   maxConcurrentJobs: number;
-  anthropicApiKey?: string;
 };
 
 export type ClientConfig = {

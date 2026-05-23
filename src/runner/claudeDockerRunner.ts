@@ -4,8 +4,8 @@ import type { DaemonConfig, RunnerInput } from "../shared/types";
 import { commandExists } from "../shared/shell";
 import type { JobStore } from "../daemon/store";
 
-function resolveApiKey(config: DaemonConfig): string | null {
-  return process.env.ANTHROPIC_API_KEY ?? config.anthropicApiKey ?? null;
+function resolveApiKey(): string | null {
+  return process.env.ANTHROPIC_API_KEY ?? null;
 }
 
 export async function runClaudeInDocker(input: {
@@ -22,7 +22,7 @@ export async function runClaudeInDocker(input: {
   const logFile = Bun.file(logPath);
   const writer = logFile.writer();
 
-  const apiKey = resolveApiKey(input.config);
+  const apiKey = resolveApiKey();
   if (!apiKey) {
     throw new Error("No ANTHROPIC_API_KEY found — run: sandpilot setup api-key <key>");
   }

@@ -6,19 +6,18 @@
 
 **1. One-time setup** (run from this repo):
 ```bash
-scripts/bootstrap.sh nova@novas-mac-mini.local
+sandpilot setup nova@novas-mac-mini.local
 ssh -t nova@novas-mac-mini.local 'claude auth login'
-sandpilot setup api-key sk-ant-...
 ```
 
-**2. Start your session:**
+**2. Each session** (start tunnel + apply any missed patches):
 ```bash
 sandpilot start
 ```
 
 **3. Run a task** (from any git repo):
 ```bash
-sandpilot run "your task here" --cwd . --apply --detach
+sandpilot run "your task here"
 ```
 
 Done! You'll get a notification when it's ready. Review with `git diff`.

@@ -83,7 +83,7 @@ async function main(): Promise<void> {
   if (command === "pending") return pending(rest);
   if (command === "start") return start();
   if (command === "setup" && subcommand === "wake-agent") return setupWakeAgent();
-  if (command === "setup" && subcommand === "api-key" && rest[0]) return setupApiKey(rest[0]);
+  if (command === "setup" && subcommand && !subcommand.startsWith("-")) return setup(subcommand);
   if (command === "set" && subcommand === "model" && rest[0]) return setModel(rest[0]);
   if (command === "set" && subcommand === "runner" && rest[0]) return setRunner(rest[0]);
   if (command === "set" && subcommand === "thinking" && rest[0]) return setThinking(rest[0]);
@@ -390,36 +390,87 @@ async function openDashboard(): Promise<void> {
   await runCommand(["open", url]);
 }
 
-async function setupApiKey(apiKey: string): Promise<void> {
-  const remotePath = join(homedir(), ".sandpilot", "remote");
-  if (!existsSync(remotePath)) throw new Error("no remote configured — run scripts/bootstrap.sh first");
-  const remote = readFileSync(remotePath, "utf8").trim();
-
-  await runLive([
-    "ssh", remote,
-    [
-      "node -e \"",
-      "const fs=require('fs'),p=require('os').homedir()+'/.sandpilot/daemon.json';",
-      "const c=JSON.parse(fs.readFileSync(p,'utf8'));",
-      `c.anthropicApiKey='${apiKey}';`,
-      "fs.writeFileSync(p,JSON.stringify(c,null,2)+'\\n',{mode:0o600});",
-      "console.log('API key saved');",
-      "\"",
-    ].join(""),
-  ]);
-
-  // restart daemon so it picks up the new key
+async function setup(remote: string): Promise<void> {
   const remoteDir = (process.env.SANDPILOT_REMOTE_DIR ?? "~/sandpilot").replace(/^~/, "$HOME");
+
+  console.log("==> Installing local sandpilot wrappers");
+  await runProjectScript("scripts/install-local.sh");
+
+  console.log(`\n==> Checking SSH access to ${remote}`);
+  await runLive(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", remote, "whoami"]);
+
+  console.log(`\n==> Copying sandpilot to ${remote}:${remoteDir}`);
   await runLive([
-    "ssh", remote,
-    [
-      'export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.bun/bin:$PATH"',
-      'pkill -f "src/cli/index.ts daemon start" || true',
-      `nohup bun run ${remoteDir}/src/cli/index.ts daemon start > ~/.sandpilot/daemon.log 2>&1 &`,
-      "sleep 2",
-      "curl -fsS http://127.0.0.1:7349/health > /dev/null && echo 'daemon restarted ok'",
-    ].join("\n"),
+    "rsync", "-az", "--delete",
+    "--exclude", "node_modules",
+    "--exclude", ".sandpilot",
+    "--exclude", ".git",
+    `${projectRoot}/`, `${remote}:${remoteDir}/`,
   ]);
+
+  console.log("\n==> Installing remote prerequisites and starting daemon");
+  const remoteScript = `
+set -euo pipefail
+export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.bun/bin:$PATH"
+cd "${remoteDir}"
+
+if ! command -v bun >/dev/null 2>&1; then
+  if command -v brew >/dev/null 2>&1; then
+    brew install oven-sh/bun/bun
+  else
+    curl -fsSL https://bun.sh/install | bash
+    export PATH="$HOME/.bun/bin:$PATH"
+  fi
+fi
+
+bun install --silent
+
+if ! command -v claude >/dev/null 2>&1; then
+  npm install -g @anthropic-ai/claude-code
+fi
+
+if ! command -v codex >/dev/null 2>&1; then
+  npm install -g @openai/codex
+fi
+
+mkdir -p "$HOME/.sandpilot"
+pkill -f "src/cli/index.ts daemon start" >/dev/null 2>&1 || true
+nohup bun run src/cli/index.ts daemon start > "$HOME/.sandpilot/daemon.log" 2>&1 &
+sleep 2
+curl -fsS http://127.0.0.1:7349/health >/dev/null && echo "daemon ok"
+`;
+
+  const sshProc = Bun.spawn(["ssh", remote, "/bin/zsh -s"], {
+    stdin: new TextEncoder().encode(remoteScript),
+    stdout: "inherit",
+    stderr: "inherit",
+  });
+  const sshExit = await sshProc.exited;
+  if (sshExit !== 0) throw new Error(`remote setup failed (${sshExit})`);
+
+  console.log("\n==> Syncing daemon token to local client config");
+  const { stdout: daemonJson } = await runCommand(["ssh", remote, "cat ~/.sandpilot/daemon.json"]);
+  const daemonConfig = JSON.parse(daemonJson) as { port: number; token: string };
+  const modelsJson = JSON.parse(readFileSync(join(projectRoot, "src/shared/models.json"), "utf8")) as { defaultProvider: string; providers: Record<string, { defaultModel: string }> };
+  const defaultProvider = modelsJson.defaultProvider;
+  const defaultModel = modelsJson.providers[defaultProvider]?.defaultModel ?? "claude-sonnet-4-6";
+  const clientConfig = {
+    baseUrl: `http://127.0.0.1:${daemonConfig.port}`,
+    token: daemonConfig.token,
+    defaultModel,
+    defaultThinking: "medium" as const,
+  };
+  const clientPath = join(homedir(), ".sandpilot", "client.json");
+  mkdirSync(dirname(clientPath), { recursive: true });
+  writeFileSync(clientPath, `${JSON.stringify(clientConfig, null, 2)}\n`, { mode: 0o600 });
+  writeFileSync(join(homedir(), ".sandpilot", "remote"), `${remote}\n`, { mode: 0o600 });
+  console.log("client config written");
+
+  console.log("\n==> Setup complete");
+  console.log("\nLog in to Claude Code on the Mac mini:");
+  console.log(`  ssh -t ${remote} 'claude auth login'`);
+  console.log("\nThen start your session:");
+  console.log("  sandpilot start");
 }
 
 async function setModel(model: string): Promise<void> {
@@ -808,6 +859,7 @@ Usage:
   sandpilot daemon start
   sandpilot daemon doctor
   sandpilot daemon sandbox-doctor
+  sandpilot setup <user@mac-mini.local>
   sandpilot setup agents
   sandpilot doctor agents
   sandpilot models
