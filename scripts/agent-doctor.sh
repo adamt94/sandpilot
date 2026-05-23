@@ -34,6 +34,12 @@ else
   status "Codex skill" "missing"
 fi
 
+if exists "${HOME}/.claude/skills/sandbox-agent/SKILL.md"; then
+  status "Claude skill" "installed"
+else
+  status "Claude skill" "missing"
+fi
+
 if exists "${HOME}/.claude/commands/sandbox.md"; then
   status "Claude /sandbox command" "installed"
 else

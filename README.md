@@ -101,7 +101,21 @@ This starts the tunnel, checks the daemon, and applies any patches you missed wh
 
 **Run a task:**
 ```bash
-sandpilot run "your task here" --cwd . --apply --detach
+sandpilot run "your task here"
+```
+
+Uses your default AI provider and model. The job runs in the background on your Mac mini — close your laptop and you'll get a notification when it's done.
+
+**Use a specific provider:**
+```bash
+sandpilot run "your task" --provider claude-code
+sandpilot run "your task" --provider codex
+```
+
+**Use a specific model:**
+```bash
+sandpilot run "your task" --model claude-opus-4-7
+sandpilot run "your task" --model codex-gpt-4
 ```
 
 **Push the result to a branch instead of applying locally:**
@@ -114,6 +128,16 @@ sandpilot run "your task here" --cwd . --branch --detach
 /sandbox your task here
 ```
 
+**From Claude Code with the Sandpilot skill:**
+```text
+Use $sandbox-agent to run this in the Mac mini sandbox: your task here
+```
+
+**From Codex with the Sandpilot skill:**
+```text
+Use $sandbox-agent to run this in the Mac mini sandbox: your task here
+```
+
 **Check status:**
 ```bash
 sandpilot list              # List all jobs
@@ -124,6 +148,44 @@ sandpilot logs <job-id>     # View logs
 ---
 
 ## Advanced Features
+
+<details>
+<summary><strong>Skills and Agent Setup</strong></summary>
+
+Install or repair the local agent integrations:
+
+```bash
+sandpilot setup agents
+# Equivalent when you only think of these as skills:
+sandpilot setup skills
+```
+
+This installs:
+
+- the `sandpilot`, `sandpilot-tunnel`, and `sandpilot-tailscale` wrappers in `~/.local/bin`
+- the Codex skill at `~/.codex/skills/sandbox-agent/SKILL.md`
+- the Claude skill at `~/.claude/skills/sandbox-agent/SKILL.md`
+- the Claude `/sandbox` command at `~/.claude/commands/sandbox.md`
+- the local Codex Sandpilot plugin when the `codex` CLI is available
+
+Check the installed integrations:
+
+```bash
+sandpilot doctor agents
+sandpilot doctor skills
+```
+
+Use the Claude or Codex skill by naming it in the prompt:
+
+```text
+Use $sandbox-agent to run this in the Mac mini sandbox: fix the failing tests
+```
+
+The skill submits the job with `--apply --detach`, reports the job and session ids, and then stops while the background watcher applies the patch when the Mac mini finishes.
+
+For more detail, see [Agent App Setup](./docs/AGENT_APP_SETUP.md).
+
+</details>
 
 <details>
 <summary><strong>Dashboard</strong></summary>
@@ -153,15 +215,18 @@ sandpilot update
 </details>
 
 <details>
-<summary><strong>Model Selection</strong></summary>
+<summary><strong>Available Models</strong></summary>
 
-Use a specific Claude model for your task:
+**Claude Code models:**
+- `claude-opus-4-7` — Most capable, best for complex tasks
+- `claude-sonnet-4-6` — Balanced performance and speed
+- `claude-haiku-4-5` — Fastest, good for simple tasks
 
-```bash
-sandpilot run "your task" --cwd . --model claude-opus-4-7 --apply --detach
-```
+**Codex models:**
+- `codex-gpt-4` — OpenAI's most capable coding model
+- `codex-gpt-3.5-turbo` — Faster, good for simpler tasks
 
-Available models: `claude-opus-4-7`, `claude-sonnet-4-6`, `claude-haiku-4-5`
+Set your default with `sandpilot config model <model>` or override per-task with `--model`.
 
 List all configured models and provider-specific thinking levels:
 
@@ -267,7 +332,7 @@ ssh nova@novas-mac-mini.local '/bin/zsh -lc "pkill -f \"src/cli/index.ts daemon 
 Sandpilot runs a daemon on your Mac mini that:
 
 1. **Receives** job requests from your laptop over SSH tunnel
-2. **Executes** Claude Code in isolated Docker containers
+2. **Executes** your chosen AI provider (Claude Code or Codex) in isolated containers
 3. **Generates** git patches from the AI's changes
 4. **Notifies** you when complete via macOS notification
 5. **Syncs** patches back to your laptop automatically

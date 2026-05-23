@@ -59,7 +59,13 @@ tr.expanded-row td{background:var(--surface);border-bottom:1px solid var(--borde
 .expand-meta{display:flex;gap:24px;margin-bottom:12px;flex-wrap:wrap}
 .expand-meta span{color:var(--muted);font-size:12px}
 .expand-meta span b{color:var(--text)}
-.events-box{background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:10px 12px;max-height:260px;overflow-y:auto;font-size:12px;line-height:1.6}
+.events-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.events-header span{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+.copy-logs-btn{background:none;border:1px solid var(--border);color:var(--muted);cursor:pointer;padding:2px 8px;border-radius:3px;font-size:11px;transition:color .1s,border-color .1s}
+.copy-logs-btn:hover{color:var(--blue);border-color:var(--blue)}
+.copy-logs-btn.copied{color:var(--green);border-color:var(--green)}
+.events-box{background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:10px 12px;max-height:260px;overflow:auto;font-size:12px;line-height:1.6}
+.events-box div{white-space:nowrap}
 .ev-status{color:var(--blue)}
 .ev-info{color:var(--muted)}
 .ev-stdout{color:var(--text)}
@@ -85,6 +91,11 @@ tr.expanded-row td{background:var(--surface);border-bottom:1px solid var(--borde
 .copy-btn.copied{color:var(--green);opacity:1}
 .empty{color:var(--muted);padding:32px 0;text-align:center;font-size:13px}
 #error-banner{background:#2d1a1a;border:1px solid var(--red);color:var(--red);padding:10px 24px;font-size:12px;display:none}
+.id-container{position:relative;display:inline-block;padding-right:24px}
+.copy-btn{position:absolute;right:0;top:50%;transform:translateY(-50%);background:var(--surface2);border:1px solid var(--border);color:var(--muted);border-radius:3px;padding:2px 6px;cursor:pointer;font-family:inherit;font-size:11px;opacity:0;transition:opacity .15s}
+.id-container:hover .copy-btn{opacity:1}
+.copy-btn:hover{border-color:var(--blue);color:var(--blue)}
+.copy-btn:active{background:var(--blue);color:var(--bg)}
 </style>
 </head>
 <body>
@@ -255,7 +266,8 @@ function jobRow(j) {
       (j.clientCwd ? '<span><b>cwd:</b> ' + esc(j.clientCwd) + '</span>' : '') +
       (j.warning ? '<span style="color:var(--yellow)"><b>⚠</b> ' + esc(j.warning) + '</span>' : '') +
     '</div>' +
-    '<div class="events-box">' + evHtml + '</div>' +
+    '<div class="events-header"><span>logs</span><button class="copy-logs-btn" data-copy-logs="' + j.id + '">⎘ copy</button></div>' +
+    '<div class="events-box" id="events-box-' + j.id + '">' + evHtml + '</div>' +
   '</div></td></tr>';
 }
 
@@ -278,6 +290,18 @@ function attachListeners() {
       btn.textContent = '✓';
       btn.classList.add('copied');
       setTimeout(() => { btn.textContent = '⎘'; btn.classList.remove('copied'); }, 1500);
+    });
+  }
+  for (const btn of document.querySelectorAll('[data-copy-logs]')) {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      const id = btn.dataset.copyLogs;
+      const events = eventsCache[id] || [];
+      const text = events.map(ev => '[' + ev.type + '] ' + ev.payload).join('\n');
+      await navigator.clipboard.writeText(text);
+      btn.textContent = '✓ copied';
+      btn.classList.add('copied');
+      setTimeout(() => { btn.textContent = '⎘ copy'; btn.classList.remove('copied'); }, 1500);
     });
   }
   for (const btn of document.querySelectorAll('[data-cancel]')) {
@@ -310,6 +334,20 @@ function attachListeners() {
         showError(err.message);
         btn.disabled = false;
         btn.textContent = 'apply';
+      }
+    });
+  }
+  for (const btn of document.querySelectorAll('[data-copy]')) {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      const id = btn.dataset.copy;
+      try {
+        await navigator.clipboard.writeText(id);
+        const originalText = btn.textContent;
+        btn.textContent = '✓';
+        setTimeout(() => { btn.textContent = originalText; }, 1000);
+      } catch(err) {
+        console.error('Failed to copy:', err);
       }
     });
   }

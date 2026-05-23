@@ -55,12 +55,12 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (command === "setup" && subcommand === "agents") {
+  if (command === "setup" && (subcommand === "agents" || subcommand === "skills")) {
     await runProjectScript("scripts/install-local.sh");
     return;
   }
 
-  if (command === "doctor" && subcommand === "agents") {
+  if (command === "doctor" && (subcommand === "agents" || subcommand === "skills")) {
     await runProjectScript("scripts/agent-doctor.sh");
     return;
   }
@@ -861,7 +861,9 @@ Usage:
   sandpilot daemon sandbox-doctor
   sandpilot setup <user@mac-mini.local>
   sandpilot setup agents
+  sandpilot setup skills
   sandpilot doctor agents
+  sandpilot doctor skills
   sandpilot models
   sandpilot run "prompt" [--cwd .] [--model ${defaultModel}] [--stream] [--apply|--branch] [--detach] [--branch-name name] [--new-session]
   sandpilot run "prompt" --continue <session-id> [--model ${defaultModel}] [--stream] [--apply|--branch] [--detach] [--branch-name name]

@@ -13,7 +13,9 @@ Sandpilot is installed so a new Codex session or another local AI agent can send
 
 ```bash
 sandpilot setup agents
+sandpilot setup skills
 sandpilot doctor agents
+sandpilot doctor skills
 ```
 
 ## Start A Tunnel
@@ -54,6 +56,12 @@ Claude Code:
 
 ```text
 /sandbox describe the task here
+```
+
+or:
+
+```text
+Use $sandbox-agent to run this in the Mac mini sandbox: describe the task here
 ```
 
 T3 Code:

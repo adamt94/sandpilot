@@ -28,7 +28,7 @@ Nothing else. No next steps. No follow-up offers. Stop.
 
 1. For a new task, run:
    ```bash
-   sandpilot run "<prompt>" --cwd .
+   sandpilot run "<prompt>" --cwd . --apply --detach
    ```
 2. To continue an existing sandbox session, run:
    ```bash
