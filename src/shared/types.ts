@@ -8,7 +8,7 @@ export type JobStatus =
 
 export type SessionMode = "new" | "continue";
 
-export type ThinkingLevel = "low" | "medium" | "high";
+export type ThinkingLevel = "low" | "medium" | "high" | "max";
 
 export type JobRecord = {
   id: string;

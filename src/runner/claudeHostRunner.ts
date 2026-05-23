@@ -23,24 +23,25 @@ export async function runClaudeOnHost(input: {
     env.ANTHROPIC_API_KEY = input.config.anthropicApiKey;
   }
 
-  const THINKING_BUDGETS: Record<string, number> = { low: 2000, medium: 8000, high: 20000 };
-  const thinkingBudget = input.runner.job.thinking ? THINKING_BUDGETS[input.runner.job.thinking] : null;
+  const effortFlag = input.runner.job.thinking ? ["--effort", input.runner.job.thinking] : [];
 
   const args = [
     "claude",
+    "--print",
     "--dangerously-skip-permissions",
     "--output-format", "stream-json",
     "--verbose",
     "--model", input.runner.job.model,
-    ...(thinkingBudget ? ["--thinking-budget", String(thinkingBudget)] : []),
-    "-p", input.runner.job.prompt,
+    ...effortFlag,
+    "-p", "-",
   ];
 
-  input.store.addEvent(input.runner.job.id, "info", `Starting Claude on host (model: ${input.runner.job.model})`);
+  input.store.addEvent(input.runner.job.id, "info", `Starting Claude on host (model: ${input.runner.job.model}${input.runner.job.thinking ? `, effort: ${input.runner.job.thinking}` : ""})`);
 
   const proc = Bun.spawn(args, {
     cwd: input.runner.repoDir,
     env,
+    stdin: new TextEncoder().encode(input.runner.job.prompt),
     stdout: "pipe",
     stderr: "pipe",
   });

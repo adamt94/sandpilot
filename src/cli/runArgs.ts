@@ -37,7 +37,7 @@ export function parseRunArgs(inputArgs: string[]): RunOptions {
       index += 1;
     } else if (value === "--thinking" || value === "-t") {
       const next = inputArgs[index + 1];
-      if (!next || !["low", "medium", "high"].includes(next)) throw new Error(`${value} requires low, medium, or high`);
+      if (!next || !["low", "medium", "high", "max"].includes(next)) throw new Error(`${value} requires low, medium, high, or max`);
       thinking = next as ThinkingLevel;
       index += 1;
     } else if (value === "--continue") {

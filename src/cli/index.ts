@@ -343,7 +343,7 @@ async function setModel(model: string): Promise<void> {
 }
 
 async function setThinking(level: string): Promise<void> {
-  const valid = ["low", "medium", "high", "off"];
+  const valid = ["low", "medium", "high", "max", "off"];
   if (!valid.includes(level)) {
     console.error(`unknown thinking level: ${level}`);
     console.error(`available: low, medium, high, off`);
