@@ -74,6 +74,11 @@ tr.expanded-row td{background:var(--surface);border-bottom:1px solid var(--borde
 .age-text{color:var(--muted)}
 .chevron{color:var(--muted);transition:transform .15s;display:inline-block}
 .chevron.open{transform:rotate(90deg)}
+.id-cell{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)}
+.copy-btn{background:none;border:none;color:var(--muted);cursor:pointer;padding:1px 3px;border-radius:3px;font-size:11px;opacity:0;transition:opacity .1s}
+.id-cell:hover .copy-btn{opacity:1}
+.copy-btn:hover{color:var(--blue);background:var(--surface2)}
+.copy-btn.copied{color:var(--green);opacity:1}
 .empty{color:var(--muted);padding:32px 0;text-align:center;font-size:13px}
 #error-banner{background:#2d1a1a;border:1px solid var(--red);color:var(--red);padding:10px 24px;font-size:12px;display:none}
 </style>
@@ -152,7 +157,7 @@ function renderStats() {
   const rate = (succeeded + failed) > 0 ? Math.round(succeeded / (succeeded + failed) * 100) : null;
 
   const models = {};
-  for (const j of jobs) { models[shortModel(j.model)] = (models[shortModel(j.model)] || 0) + 1; }
+  for (const j of jobs) { models[modelLabel(j.model, null)] = (models[modelLabel(j.model, null)] || 0) + 1; }
   const topModel = Object.entries(models).sort((a,b) => b[1]-a[1])[0];
 
   document.getElementById('stats').innerHTML =
@@ -200,9 +205,9 @@ function activeCard(j) {
     '<span class="spinner">⟳</span>' +
     '<div class="job-main">' +
       '<div class="job-row1">' +
-        '<span class="job-id">' + j.id.slice(0,18) + '</span>' +
+        '<span class="id-cell job-id">' + j.id.slice(0,18) + copyBtn(j.id) + '</span>' +
         '<span class="repo tag">' + esc(j.repoName) + '</span>' +
-        '<span class="model-badge">' + shortModel(j.model) + '</span>' +
+        '<span class="model-badge">' + modelLabel(j.model, j.thinking) + '</span>' +
         '<span class="elapsed" data-start="' + (j.startedAt||'') + '">' + fmtDuration(elapsed) + '</span>' +
       '</div>' +
       '<div class="prompt-preview">' + esc(j.prompt) + '</div>' +
@@ -218,9 +223,9 @@ function jobRow(j) {
     : '—';
   const rows = '<tr class="job-row" data-id="' + j.id + '">' +
     '<td><span class="status-icon ' + j.status + '">' + statusIcon(j.status) + '</span></td>' +
-    '<td style="font-size:11px;color:var(--muted)">' + j.id.slice(0,16) + '</td>' +
+    '<td><div class="id-cell" onclick="event.stopPropagation()">' + j.id.slice(0,16) + copyBtn(j.id) + '</div></td>' +
     '<td><span class="tag">' + esc(j.repoName) + '</span></td>' +
-    '<td class="model-text">' + shortModel(j.model) + '</td>' +
+    '<td class="model-text">' + modelLabel(j.model, j.thinking) + '</td>' +
     '<td class="prompt-cell">' + esc(j.prompt) + '</td>' +
     '<td class="duration-text">' + dur + '</td>' +
     '<td class="age-text">' + (j.finishedAt ? relTime(new Date(j.finishedAt)) : '—') + '</td>' +
@@ -246,6 +251,16 @@ function jobRow(j) {
 }
 
 function attachListeners() {
+  for (const btn of document.querySelectorAll('[data-copy]')) {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      const id = btn.dataset.copy;
+      await navigator.clipboard.writeText(id);
+      btn.textContent = '✓';
+      btn.classList.add('copied');
+      setTimeout(() => { btn.textContent = '⎘'; btn.classList.remove('copied'); }, 1500);
+    });
+  }
   for (const btn of document.querySelectorAll('[data-cancel]')) {
     btn.addEventListener('click', async e => {
       e.stopPropagation();
@@ -280,13 +295,21 @@ function statusIcon(s) {
   return { succeeded:'✓', failed:'✗', cancelled:'⊘', queued:'·', preparing:'·', running:'⟳' }[s] || '?';
 }
 
-function shortModel(m) {
+function modelLabel(m, thinking) {
   if (!m) return '—';
-  if (m.includes('opus')) return 'opus';
-  if (m.includes('sonnet')) return 'sonnet';
-  if (m.includes('haiku')) return 'haiku';
-  if (m.startsWith('codex') || m.startsWith('o')) return 'codex';
-  return m.slice(0, 10);
+  let label;
+  const claudeMatch = m.match(/^claude-(opus|sonnet|haiku)-(\d+)-(\d+)/);
+  if (claudeMatch) {
+    label = claudeMatch[1] + ' ' + claudeMatch[2] + '.' + claudeMatch[3];
+  } else {
+    label = m;
+  }
+  if (thinking) label += ' · ' + thinking;
+  return label;
+}
+
+function copyBtn(id) {
+  return '<button class="copy-btn" data-copy="' + id + '" title="copy id">⎘</button>';
 }
 
 function fmtDuration(ms) {
