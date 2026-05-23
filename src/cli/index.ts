@@ -6,9 +6,9 @@ import { fileURLToPath } from "node:url";
 import { SandpilotDaemon } from "../daemon/server";
 import { parseRunArgs } from "./runArgs";
 import { packageRepo } from "../git/packageRepo";
-import { loadClientConfig, loadDaemonConfig } from "../shared/config";
+import { loadClientConfig, loadDaemonConfig, saveClientConfig } from "../shared/config";
 import { apiFetch } from "../shared/http";
-import { getDefaultModel } from "../shared/models";
+import { getAllModels, getDefaultModel, getModelProvider } from "../shared/models";
 import { commandExists, runCommand } from "../shared/shell";
 import type { JobEvent, JobRecord, SubmitJobRequest, SubmitJobResponse } from "../shared/types";
 
@@ -70,6 +70,9 @@ async function main(): Promise<void> {
   if (command === "start") return start();
   if (command === "setup" && subcommand === "wake-agent") return setupWakeAgent();
   if (command === "setup" && subcommand === "api-key" && rest[0]) return setupApiKey(rest[0]);
+  if (command === "set" && subcommand === "model" && rest[0]) return setModel(rest[0]);
+  if (command === "set" && subcommand === "runner" && rest[0]) return setRunner(rest[0]);
+  if (command === "set" && subcommand === "thinking" && rest[0]) return setThinking(rest[0]);
   if (command === "dashboard") return openDashboard();
   if (command === "update") return update();
   if (command === "tunnel") return tunnel([subcommand, ...rest].filter(Boolean) as string[]);
@@ -81,19 +84,24 @@ async function main(): Promise<void> {
 async function run(inputArgs: string[]): Promise<void> {
   const options = parseRunArgs(inputArgs);
   const config = loadClientConfig();
+  const thinking = options.thinking ?? config.defaultThinking ?? null;
   const request: SubmitJobRequest = options.continueSession
     ? {
         prompt: options.prompt,
         model: options.model ?? config.defaultModel,
+        thinking: thinking ?? undefined,
         sessionMode: "continue",
         sessionId: options.continueSession,
         clientCwd: resolve(options.cwd),
       }
-    : await packageRepo({
-        cwd: options.cwd,
-        prompt: options.prompt,
-        model: options.model ?? config.defaultModel,
-      });
+    : {
+        ...await packageRepo({
+          cwd: options.cwd,
+          prompt: options.prompt,
+          model: options.model ?? config.defaultModel,
+        }),
+        thinking: thinking ?? undefined,
+      };
 
   if (request.warning) console.warn(`warning: ${request.warning}`);
   const response = await apiFetch<SubmitJobResponse>(config, "/v1/jobs", {
@@ -206,7 +214,20 @@ async function applyPatch(jobId: string, cwd: string): Promise<void> {
   const tempDir = mkdtempSync(join(tmpdir(), "sandpilot-apply-"));
   const patchPath = join(tempDir, "result.patch");
   writeFileSync(patchPath, patchText);
-  await runCommand(["git", "apply", "--whitespace=nowarn", patchPath], { cwd });
+  try {
+    await runCommand(["git", "apply", "--whitespace=nowarn", patchPath], { cwd });
+    return;
+  } catch {}
+
+  try {
+    console.log("clean apply failed, retrying with fuzzy context matching...");
+    await runCommand(["patch", "--fuzz=3", "-p1", "-i", patchPath], { cwd });
+    return;
+  } catch {}
+
+  console.log("fuzzy apply failed, applying with --reject (check *.rej files for conflicts)...");
+  await runCommand(["git", "apply", "--whitespace=nowarn", "--reject", patchPath], { cwd, okExitCodes: [0, 1] });
+  console.log("partial apply done — search for *.rej files to see what needs manual merging");
 }
 
 function appliedMarkerPath(jobId: string): string {
@@ -307,6 +328,53 @@ async function setupApiKey(apiKey: string): Promise<void> {
   ]);
 }
 
+async function setModel(model: string): Promise<void> {
+  const known = getAllModels();
+  if (!known.includes(model)) {
+    console.error(`unknown model: ${model}`);
+    console.error(`available: ${known.join(", ")}`);
+    process.exitCode = 1;
+    return;
+  }
+  const config = loadClientConfig();
+  config.defaultModel = model;
+  saveClientConfig(config);
+  console.log(`default model set to ${model}`);
+}
+
+async function setThinking(level: string): Promise<void> {
+  const valid = ["low", "medium", "high", "off"];
+  if (!valid.includes(level)) {
+    console.error(`unknown thinking level: ${level}`);
+    console.error(`available: low, medium, high, off`);
+    process.exitCode = 1;
+    return;
+  }
+  const config = loadClientConfig();
+  config.defaultThinking = level === "off" ? undefined : (level as "low" | "medium" | "high");
+  saveClientConfig(config);
+  console.log(level === "off" ? "thinking disabled by default" : `default thinking set to ${level}`);
+}
+
+async function setRunner(runner: string): Promise<void> {
+  const RUNNERS: Record<string, string> = {
+    claude: getDefaultModel("anthropic"),
+    codex: getDefaultModel("openai"),
+  };
+  const model = RUNNERS[runner];
+  if (!model) {
+    console.error(`unknown runner: ${runner}`);
+    console.error(`available: ${Object.keys(RUNNERS).join(", ")}`);
+    process.exitCode = 1;
+    return;
+  }
+  const config = loadClientConfig();
+  config.defaultModel = model;
+  saveClientConfig(config);
+  console.log(`default runner set to ${runner} (model: ${model})`);
+  console.log(`change model: sandpilot set model <model>`);
+}
+
 async function setupWakeAgent(): Promise<void> {
   const sandpilotBin = (await runCommand(["which", "sandpilot"])).stdout.trim()
     || join(dirname(fileURLToPath(import.meta.url)), "../../bin/sandpilot");
@@ -386,8 +454,16 @@ async function cancel(jobId: string): Promise<void> {
 async function list(): Promise<void> {
   const config = loadClientConfig();
   const response = await apiFetch<{ jobs: JobRecord[] }>(config, "/v1/jobs");
+  if (response.jobs.length === 0) {
+    console.log("no jobs found");
+    return;
+  }
+  const col = (s: string, w: number) => s.padEnd(w).slice(0, w);
+  console.log(`${"ID".padEnd(36)}  ${"STATUS".padEnd(12)}  ${"REPO".padEnd(24)}  CREATED`);
+  console.log("-".repeat(90));
   for (const job of response.jobs) {
-    console.log(`${job.id}\t${job.sessionId ?? "-"}\t${job.status}\t${job.repoName}\t${job.createdAt}`);
+    const created = new Date(job.createdAt).toLocaleString();
+    console.log(`${col(job.id, 36)}  ${col(job.status, 12)}  ${col(job.repoName ?? "-", 24)}  ${created}`);
   }
 }
 
@@ -607,7 +683,9 @@ Usage:
   sandpilot pending [--apply]
   sandpilot dashboard
   sandpilot update
-  sandpilot setup api-key <key>
+  sandpilot set runner <claude|codex>
+  sandpilot set model <model>
+  sandpilot set thinking <low|medium|high|off>
   sandpilot setup wake-agent
 `);
 }

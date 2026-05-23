@@ -1,7 +1,7 @@
 import { mkdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
-import type { ArtifactKind, ArtifactRecord, JobEvent, JobRecord, JobStatus, SessionRecord } from "../shared/types";
+import type { ArtifactKind, ArtifactRecord, JobEvent, JobRecord, JobStatus, SessionRecord, ThinkingLevel } from "../shared/types";
 
 type JobRow = {
   id: string;
@@ -11,6 +11,7 @@ type JobRow = {
   source_branch: string;
   status: JobStatus;
   model: string;
+  thinking: string | null;
   prompt: string;
   warning: string | null;
   client_cwd: string | null;
@@ -108,6 +109,7 @@ export class JobStore {
     sourceHead: string;
     sourceBranch: string;
     model: string;
+    thinking: ThinkingLevel | null;
     prompt: string;
     warning: string | null;
     clientCwd: string | null;
@@ -116,8 +118,8 @@ export class JobStore {
     this.db
       .query(
         `insert into jobs
-        (id, session_id, repo_name, source_head, source_branch, status, model, prompt, warning, client_cwd, created_at)
-        values (?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?)`,
+        (id, session_id, repo_name, source_head, source_branch, status, model, thinking, prompt, warning, client_cwd, created_at)
+        values (?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         input.id,
@@ -126,6 +128,7 @@ export class JobStore {
         input.sourceHead,
         input.sourceBranch,
         input.model,
+        input.thinking,
         input.prompt,
         input.warning,
         input.clientCwd,
@@ -249,6 +252,9 @@ export class JobStore {
     if (!columns.some((column) => column.name === "client_cwd")) {
       this.db.exec("alter table jobs add column client_cwd text");
     }
+    if (!columns.some((column) => column.name === "thinking")) {
+      this.db.exec("alter table jobs add column thinking text");
+    }
   }
 }
 
@@ -261,6 +267,7 @@ function mapJob(row: JobRow): JobRecord {
     sourceBranch: row.source_branch,
     status: row.status,
     model: row.model,
+    thinking: (row.thinking as ThinkingLevel) ?? null,
     prompt: row.prompt,
     warning: row.warning,
     clientCwd: row.client_cwd,

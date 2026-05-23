@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import type { ThinkingLevel } from "../shared/types";
 
 export type RunOptions = {
   prompt: string;
@@ -7,6 +8,7 @@ export type RunOptions = {
   apply: boolean;
   detach: boolean;
   model: string | null;
+  thinking: ThinkingLevel | null;
   continueSession: string | null;
 };
 
@@ -16,6 +18,7 @@ export function parseRunArgs(inputArgs: string[]): RunOptions {
   let apply = false;
   let detach = false;
   let model: string | null = null;
+  let thinking: ThinkingLevel | null = null;
   let continueSession: string | null = null;
   let forceNewSession = false;
   const promptParts: string[] = [];
@@ -31,6 +34,11 @@ export function parseRunArgs(inputArgs: string[]): RunOptions {
       const next = inputArgs[index + 1];
       if (!next) throw new Error(`${value} requires a model`);
       model = next;
+      index += 1;
+    } else if (value === "--thinking" || value === "-t") {
+      const next = inputArgs[index + 1];
+      if (!next || !["low", "medium", "high"].includes(next)) throw new Error(`${value} requires low, medium, or high`);
+      thinking = next as ThinkingLevel;
       index += 1;
     } else if (value === "--continue") {
       const next = inputArgs[index + 1];
@@ -56,5 +64,5 @@ export function parseRunArgs(inputArgs: string[]): RunOptions {
   if (!prompt) throw new Error("run requires a prompt");
   if (stream && detach) throw new Error("--detach cannot be used with --stream");
   if (detach && !apply) throw new Error("--detach requires --apply");
-  return { prompt, cwd, stream, apply, detach, model, continueSession };
+  return { prompt, cwd, stream, apply, detach, model, thinking, continueSession };
 }

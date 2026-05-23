@@ -23,12 +23,16 @@ export async function runClaudeOnHost(input: {
     env.ANTHROPIC_API_KEY = input.config.anthropicApiKey;
   }
 
+  const THINKING_BUDGETS: Record<string, number> = { low: 2000, medium: 8000, high: 20000 };
+  const thinkingBudget = input.runner.job.thinking ? THINKING_BUDGETS[input.runner.job.thinking] : null;
+
   const args = [
     "claude",
     "--dangerously-skip-permissions",
     "--output-format", "stream-json",
     "--verbose",
     "--model", input.runner.job.model,
+    ...(thinkingBudget ? ["--thinking-budget", String(thinkingBudget)] : []),
     "-p", input.runner.job.prompt,
   ];
 

@@ -80,5 +80,10 @@ export function createDefaultClientConfig(daemon: DaemonConfig | null = null): C
     baseUrl: "http://127.0.0.1:7349",
     token: daemon?.token ?? token(),
     defaultModel: getDefaultModel(),
+    defaultThinking: "medium",
   };
+}
+
+export function saveClientConfig(config: ClientConfig): void {
+  writeJson(clientConfigPath(), config);
 }

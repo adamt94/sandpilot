@@ -86,6 +86,7 @@ export async function runCodexInDocker(input: {
     "/workspace",
     "-m",
     input.runner.job.model,
+    ...(input.runner.job.thinking ? ["-c", `model_reasoning_effort="${input.runner.job.thinking}"`] : []),
     input.runner.job.prompt,
   ];
 

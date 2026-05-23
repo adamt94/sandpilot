@@ -8,6 +8,8 @@ export type JobStatus =
 
 export type SessionMode = "new" | "continue";
 
+export type ThinkingLevel = "low" | "medium" | "high";
+
 export type JobRecord = {
   id: string;
   sessionId: string | null;
@@ -16,6 +18,7 @@ export type JobRecord = {
   sourceBranch: string;
   status: JobStatus;
   model: string;
+  thinking: ThinkingLevel | null;
   prompt: string;
   warning: string | null;
   clientCwd: string | null;
@@ -43,6 +46,7 @@ export type SubmitJobRequest = {
   sourceBranch?: string;
   prompt: string;
   model: string;
+  thinking?: ThinkingLevel | undefined;
   bundleBase64?: string;
   diff?: string;
   warning?: string;
@@ -90,6 +94,7 @@ export type ClientConfig = {
   baseUrl: string;
   token: string;
   defaultModel: string;
+  defaultThinking?: ThinkingLevel | undefined;
 };
 
 export type RunnerInput = {
