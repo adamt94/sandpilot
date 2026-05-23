@@ -75,7 +75,8 @@ tr.expanded-row td{background:var(--surface);border-bottom:1px solid var(--borde
 .chevron{color:var(--muted);transition:transform .15s;display:inline-block}
 .chevron.open{transform:rotate(90deg)}
 .id-cell{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)}
-.copy-btn{background:none;border:none;color:var(--muted);cursor:pointer;padding:1px 3px;border-radius:3px;font-size:11px;opacity:0;transition:opacity .1s}
+.copy-btn{background:none;border:none;color:var(--muted);cursor:pointer;padding:2px 4px;border-radius:3px;font-size:16px;opacity:0;transition:opacity .1s}
+.thinking-badge{color:var(--orange);font-size:11px;font-weight:500}
 .id-cell:hover .copy-btn{opacity:1}
 .copy-btn:hover{color:var(--blue);background:var(--surface2)}
 .copy-btn.copied{color:var(--green);opacity:1}
@@ -304,7 +305,7 @@ function modelLabel(m, thinking) {
   } else {
     label = m;
   }
-  if (thinking) label += ' · ' + thinking;
+  if (thinking) label += ' · <span class="thinking-badge">' + thinking + '</span>';
   return label;
 }
 

@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { randomBytes } from "node:crypto";
 import type { ClientConfig, DaemonConfig } from "./types";
-import { getDefaultModel } from "./models";
+import { getAllModels, getDefaultModel } from "./models";
 
 const appDir = join(homedir(), ".sandpilot");
 
@@ -68,11 +68,27 @@ export function loadClientConfig(): ClientConfig {
   const path = clientConfigPath();
   const daemon = readJson<DaemonConfig>(daemonConfigPath());
   const existing = readJson<ClientConfig>(path);
-  if (existing) return existing;
 
-  const created = createDefaultClientConfig(daemon);
-  writeJson(path, created);
-  return created;
+  if (!existing) {
+    const created = createDefaultClientConfig(daemon);
+    writeJson(path, created);
+    return created;
+  }
+
+  // migrate: if the stored model is no longer in the known list, reset to current default
+  const knownModels = getAllModels();
+  const migratedModel = knownModels.includes(existing.defaultModel)
+    ? existing.defaultModel
+    : getDefaultModel();
+
+  // fill in any fields added after initial setup (e.g. defaultThinking)
+  const defaults = createDefaultClientConfig(daemon);
+  const merged: ClientConfig = { ...defaults, ...existing, defaultModel: migratedModel };
+
+  if (JSON.stringify(merged) !== JSON.stringify(existing)) {
+    writeJson(path, merged);
+  }
+  return merged;
 }
 
 export function createDefaultClientConfig(daemon: DaemonConfig | null = null): ClientConfig {
